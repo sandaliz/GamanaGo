@@ -1,0 +1,104 @@
+# version: "3.9"
+services:
+  postgres:
+    image: postgres:16-alpine   # ✅ ARM-compatible, simplest PostgreSQL
+    environment:
+      POSTGRES_USER: stc
+      POSTGRES_PASSWORD: stc
+      POSTGRES_DB: stc
+    ports:
+      - "55432:5432"   # host:container → host uses 55432 to avoid conflicts
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  gateway:
+    build: ../apps/gateway
+    env_file: ../.env.example
+    ports:
+      - "8000:8000"
+    # depends on *all* downstream microservices so they’re ready
+    depends_on:
+      - postgres
+      - redis
+      - route-optimizer
+      - data-aggregator
+      - disruption-manager
+      - profile-personalizer
+      - fare-optimizer
+      - language-accessibility
+      - local-knowledge
+
+  data-aggregator:
+    build: ../apps/agents/data-aggregator
+    env_file: ../.env.example
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8001:8001"
+
+  route-optimizer:
+    build: ../apps/agents/route-optimizer
+    env_file: ../.env.example
+    depends_on:
+      - postgres
+    ports:
+      - "8002:8002"
+
+  disruption-manager:
+    build: ../apps/agents/disruption-manager
+    env_file: ../.env.example
+    depends_on:
+      - redis
+      - postgres
+    ports:
+      - "8003:8003"
+
+  profile-personalizer:
+    build: ../apps/agents/profile-personalizer
+    env_file: ../.env.example
+    depends_on:
+      - postgres
+    ports:
+      - "8004:8004"
+
+  fare-optimizer:
+    build: ../apps/agents/fare-optimizer
+    env_file: ../.env.example
+    depends_on:
+      - postgres
+    ports:
+      - "8005:8005"
+
+  language-accessibility:
+    build: ../apps/agents/language-accessibility
+    env_file: ../.env.example
+    depends_on:
+      - postgres
+    ports:
+      - "8006:8006"
+
+  local-knowledge:
+    build: ../apps/agents/local-knowledge
+    env_file: ../.env.example
+    depends_on:
+      - postgres
+    ports:
+      - "8007:8007"
+
+  web:
+    build: ../apps/web
+    environment:
+      NEXT_PUBLIC_GATEWAY_URL: "http://localhost:8000"
+    ports:
+      - "3001:3000"   # 👈 Host 3001 maps to container’s 3000
+    depends_on:
+      - gateway
+
+volumes:
+  pgdata:

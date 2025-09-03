@@ -1,0 +1,2 @@
+-- Run this on your Postgres to enable PostGIS
+-- CREATE EXTENSION IF NOT EXISTS postgis;

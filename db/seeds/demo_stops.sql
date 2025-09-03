@@ -1,0 +1,2 @@
+-- sample seed for stops (placeholder)
+-- INSERT INTO stops (id, name, geom) VALUES (...);
