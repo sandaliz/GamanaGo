@@ -1,15 +1,18 @@
 # version: "3.9"
 services:
   postgres:
-    image: postgres:16-alpine   # ✅ ARM-compatible, simplest PostgreSQL
+    image: postgis/postgis:16-3.4  
     environment:
       POSTGRES_USER: stc
       POSTGRES_PASSWORD: stc
-      POSTGRES_DB: stc
+      POSTGRES_DB: gamanagodb
     ports:
       - "55432:5432"   # host:container → host uses 55432 to avoid conflicts
     volumes:
-      - pgdata:/var/lib/postgresql/data
+       - pgdata:/var/lib/postgresql/data
+    # Auto-run on first init
+       - ../db/schemas/enable_postgis.sql:/docker-entrypoint-initdb.d/1_enable_postgis.sql
+       - ../db/seeds/demo_stops.sql:/docker-entrypoint-initdb.d/2_demo_stops.sql
 
   redis:
     image: redis:7
@@ -41,6 +44,10 @@ services:
       - redis
     ports:
       - "8001:8001"
+    volumes:
+      - ../apps/agents/data-aggregator:/app   # bind mount your code
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    restart: unless-stopped
 
   route-optimizer:
     build: ../apps/agents/route-optimizer
@@ -49,6 +56,10 @@ services:
       - postgres
     ports:
       - "8002:8002"
+    volumes:
+      - ../apps/agents/route-optimizer:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+    restart: unless-stopped
 
   disruption-manager:
     build: ../apps/agents/disruption-manager
@@ -99,6 +110,9 @@ services:
       - "3001:3000"   # 👈 Host 3001 maps to container’s 3000
     depends_on:
       - gateway
+    volumes:
+     - ../apps/web:/app
 
 volumes:
+
   pgdata:
