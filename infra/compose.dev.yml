@@ -1,47 +1,48 @@
-version: "3.9"
-
 services:
   postgres:
-    image: postgis/postgis:16-3.4  
+    image: postgis/postgis:16-3.4
     environment:
       POSTGRES_USER: stc
       POSTGRES_PASSWORD: stc
       POSTGRES_DB: gamanagodb
     ports:
-      - "5432:5432" # change the left side if 5432 is used on your Mac
+      - "5432:5432"   # change host-side if 5432 is taken on your Mac
     volumes:
-       - pgdata:/var/lib/postgresql/data
-    # Auto-run on first init
-       - ../db/schemas/enable_postgis.sql:/docker-entrypoint-initdb.d/1_enable_postgis.sql
-       - ../db/seeds/demo_stops.sql:/docker-entrypoint-initdb.d/2_demo_stops.sql
+      - pgdata:/var/lib/postgresql/data
+      # Auto-run on first init
+      - ../db/schemas/enable_postgis.sql:/docker-entrypoint-initdb.d/1_enable_postgis.sql
+      - ../db/seeds/demo_stops.sql:/docker-entrypoint-initdb.d/2_demo_stops.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stc -d gamanagodb || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   redis:
     image: redis:7
     ports:
       - "6379:6379"
 
-  profile-agent:
+  # ───────── Core agents ─────────
+
+  data-aggregator:
     build:
-      context: ../apps/agents/profile-personalizer # ← match your folder name
-    environment:
-      DATABASE_URL: postgres://onella:onella_pw@postgres:5432/gamanagodb
-      PORT: "8001"
+      context: ../apps/agents/data-aggregator
+    env_file: ../.env.example
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8001:8001"
     volumes:
-      - ../apps/agents/data-aggregator:/app   # bind mount your code
+      - ../apps/agents/data-aggregator:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
     restart: unless-stopped
 
   route-optimizer:
     build:
       context: ../apps/agents/route-optimizer
-    environment:
-      DATABASE_URL: postgres://onella:onella_pw@postgres:5432/gamanagodb
-      PORT: "8002"
+    env_file: ../.env.example
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,68 +53,109 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
     restart: unless-stopped
 
+  # Socket.IO + HTTP proxy for the web app
+  gateway:
+    build:
+      context: ../apps/gateway
+    env_file: ../.env.example
+    depends_on:
+      - data-aggregator
+      - route-optimizer
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../apps/gateway:/app
+    # NOTE: gateway exports `asgi` (Socket.IO + FastAPI)
+    command: uvicorn app.main:asgi --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+  # ───────── Optional agents (keep if you’re using them) ─────────
+
   disruption-manager:
     build: ../apps/agents/disruption-manager
     env_file: ../.env.example
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     ports:
       - "8003:8003"
+    volumes:
+      - ../apps/agents/disruption-manager:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+    restart: unless-stopped
 
+  # Use *this* one (drop the old "profile-agent")
   profile-personalizer:
     build: ../apps/agents/profile-personalizer
     env_file: ../.env.example
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "8004:8004"
+    volumes:
+      - ../apps/agents/profile-personalizer:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
+    restart: unless-stopped
 
   fare-optimizer:
     build: ../apps/agents/fare-optimizer
     env_file: ../.env.example
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "8005:8005"
+    volumes:
+      - ../apps/agents/fare-optimizer:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
+    restart: unless-stopped
 
   language-accessibility:
     build: ../apps/agents/language-accessibility
     env_file: ../.env.example
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "8006:8006"
+    volumes:
+      - ../apps/agents/language-accessibility:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
+    restart: unless-stopped
 
   local-knowledge:
     build: ../apps/agents/local-knowledge
     env_file: ../.env.example
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "8007:8007"
+    volumes:
+      - ../apps/agents/local-knowledge:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
+    restart: unless-stopped
+
+  # ───────── Web (Next.js) ─────────
 
   web:
     build: ../apps/web
+    env_file: ../.env.example
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgres://onella:onella_pw@postgres:5432/gamanagodb
-      PROFILE_AGENT_URL: http://profile-agent:8001
-      ROUTE_AGENT_URL: http://route-optimizer:8002
-      SEED_USER_ID: 1042c8a5-81b8-459d-a1fd-6d7f9ebc097a
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
     ports:
       - "3001:3000"
     command: npm run dev -- -p 3000 -H 0.0.0.0
     volumes:
-     - ../apps/web:/app
+      - ../apps/web:/app
       - /app/node_modules
     depends_on:
       - gateway
-    volumes:
-     - ../apps/web:/app
 
 volumes:
-
   pgdata:
