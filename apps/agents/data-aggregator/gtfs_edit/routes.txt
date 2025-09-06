@@ -1,0 +1,5 @@
+route_id,agency_id,route_short_name,route_long_name,route_type
+RNCG1,NCG,NCG1,"Panadura - Nittambuwa (via Dehiwala, Nugegoda, Kotte, Battaramulla, Kaduwela, Delgoda)",3
+RNCG2,NCG,17,"Panadura - Kandy (via Kotte, Kaduwela, Nittambuwa)",3
+RSLTB2,SLTB,17,"Panadura - Kandy (via Kotte, Kaduwela, Nittambuwa)",3
+RSLTB255,SLTB,255,"Panadura - Kandy (via Piliyandala, Kottawa, Athurugiriya, Kaduwela)",3

@@ -2,20 +2,23 @@ version: "3.9"
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgis/postgis:16-3.4  
     environment:
-      POSTGRES_USER: onella
-      POSTGRES_PASSWORD: onella_pw
+      POSTGRES_USER: stc
+      POSTGRES_PASSWORD: stc
       POSTGRES_DB: gamanagodb
     ports:
       - "5432:5432" # change the left side if 5432 is used on your Mac
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U onella -d gamanagodb || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
+       - pgdata:/var/lib/postgresql/data
+    # Auto-run on first init
+       - ../db/schemas/enable_postgis.sql:/docker-entrypoint-initdb.d/1_enable_postgis.sql
+       - ../db/seeds/demo_stops.sql:/docker-entrypoint-initdb.d/2_demo_stops.sql
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
 
   profile-agent:
     build:
@@ -28,6 +31,10 @@ services:
         condition: service_healthy
     ports:
       - "8001:8001"
+    volumes:
+      - ../apps/agents/data-aggregator:/app   # bind mount your code
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    restart: unless-stopped
 
   route-optimizer:
     build:
@@ -40,10 +47,54 @@ services:
         condition: service_healthy
     ports:
       - "8002:8002"
+    volumes:
+      - ../apps/agents/route-optimizer:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+    restart: unless-stopped
+
+  disruption-manager:
+    build: ../apps/agents/disruption-manager
+    env_file: ../.env.example
+    depends_on:
+      - redis
+      - postgres
+    ports:
+      - "8003:8003"
+
+  profile-personalizer:
+    build: ../apps/agents/profile-personalizer
+    env_file: ../.env.example
+    depends_on:
+      - postgres
+    ports:
+      - "8004:8004"
+
+  fare-optimizer:
+    build: ../apps/agents/fare-optimizer
+    env_file: ../.env.example
+    depends_on:
+      - postgres
+    ports:
+      - "8005:8005"
+
+  language-accessibility:
+    build: ../apps/agents/language-accessibility
+    env_file: ../.env.example
+    depends_on:
+      - postgres
+    ports:
+      - "8006:8006"
+
+  local-knowledge:
+    build: ../apps/agents/local-knowledge
+    env_file: ../.env.example
+    depends_on:
+      - postgres
+    ports:
+      - "8007:8007"
 
   web:
-    build:
-      context: ../apps/web 
+    build: ../apps/web
     environment:
       NODE_ENV: development
       DATABASE_URL: postgres://onella:onella_pw@postgres:5432/gamanagodb
@@ -59,9 +110,10 @@ services:
      - ../apps/web:/app
       - /app/node_modules
     depends_on:
-      - profile-agent
-      - route-optimizer
-      - postgres
+      - gateway
+    volumes:
+     - ../apps/web:/app
 
 volumes:
+
   pgdata:
