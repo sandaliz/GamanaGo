@@ -1,3 +1,13 @@
 fastapi
 uvicorn[standard]
 python-dotenv
+pydantic
+sqlalchemy[asyncio]
+asyncpg
+
+# crewai
+# Optional: free local models (Ollama etc.)
+# ollama
+
+# LangChain for Tool interface (BaseTool etc.)
+# langchain
