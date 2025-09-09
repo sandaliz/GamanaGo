@@ -218,25 +218,33 @@ export default function PersonalizeDashboard() {
   }, []);
 
   /* ---------- Load preferences & suggestions ---------- */
-  useEffect(() => {
-    (async () => {
-      try {
-        const [pRes, sRes] = await Promise.all([
-          fetch("/api/preferences", { cache: "no-store" }),
-          fetch("/api/suggestions", { cache: "no-store" }),
-        ]);
-        const p = await pRes.json().catch(() => null);
-        if (p && p.weights) setPrefs(p);
+useEffect(() => {
+  (async () => {
+    try {
+      const [pRes, sRes] = await Promise.all([
+        fetch("/api/preferences", { cache: "no-store" }),
+        fetch("/api/suggestions", { cache: "no-store" }),
+      ]);
 
-        const s = await sRes.json().catch(() => []);
-        setSuggestions(Array.isArray(s) ? s : []);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+      // preferences
+      const pText = await pRes.text();
+      let p: any = null;
+      try { p = pText ? JSON.parse(pText) : null; } catch {}
+      if (p && p.weights) setPrefs(p);
+
+      // suggestions
+      const sText = await sRes.text();
+      let s: any = [];
+      try { s = sText ? JSON.parse(sText) : []; } catch {}
+      setSuggestions(Array.isArray(s) ? s : []);
+    } catch (e) {
+      console.error(e);
+      setSuggestions([]); // safe fallback
+    } finally {
+      setLoading(false);
+    }
+  })();
+}, []);
 
   /* ---------- Live transport updates ---------- */
   useEffect(() => {
@@ -245,7 +253,6 @@ export default function PersonalizeDashboard() {
         const res = await fetch("/api/transport");
         const data: TransportData = await res.json();
         setTransportData(data);
-        // Example dynamic re-score
         recalcSuggestions(data);
       } catch {}
     }, 15000);
@@ -266,27 +273,38 @@ export default function PersonalizeDashboard() {
     return () => clearTimeout(t);
   }, [prefs, loading]);
 
-  /* ---------- Scenario effects on local view ---------- */
+  /* ---------- Scenario effects (local + backend context) ---------- */
   useEffect(() => {
-    // lightweight local effects (not persisted):
+    // local visual nudges
     setPrefs((prev) => {
       const next = { ...prev };
       const w = { ...next.weights };
 
-      // start from base
-      // (avoid compounding by reading from prev directly & clamping)
       if (peak) w.time = Math.min(100, Math.max(w.time, 70));
       if (rain) next.walk_limit_m = 600;
       else next.walk_limit_m = Math.max(next.walk_limit_m, 800);
 
       if (trainDelay) {
-        // nudge away from trains
-        // @ts-ignore
-        w.time = Math.min(100, (w.time as number) + 0); // leave time
+        // keep time; you could down-rank trains if you model per-mode weights
       }
       next.weights = w;
       return next;
     });
+
+    // inform backend Context service (so planner adapts)
+    (async () => {
+      try {
+        await fetch("/api/context", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            peak_hour: peak,
+            rain: rain,
+            train_delayed: trainDelay,
+          }),
+        });
+      } catch {}
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [peak, rain, trainDelay]);
 
@@ -323,7 +341,7 @@ export default function PersonalizeDashboard() {
     setToastOpen(true);
     speak(prefs.voice_assist, msg);
 
-    // tell server to apply (persists to DB)
+    // persist to server
     try {
       await fetch(`/api/suggestions`, {
         method: "POST",
@@ -335,7 +353,6 @@ export default function PersonalizeDashboard() {
 
   /* ---------- Helpers ---------- */
   function recalcSuggestions(_data: TransportData) {
-    // Example: weight-based scoring
     const updated = suggestions.map((s) => {
       let score = 0;
       if (s.payload?.weights) {
@@ -348,7 +365,6 @@ export default function PersonalizeDashboard() {
           score += weight * (isFinite(numVal) ? numVal : 0);
         }
       }
-      // scenario nudges
       if (rain && s.kind === "comfort") score += 10;
       if (peak && s.kind === "time") score += 10;
       if (trainDelay && s.kind === "rail") score -= 10;
@@ -359,28 +375,20 @@ export default function PersonalizeDashboard() {
 
   /* ---------------- Render ---------------- */
   return (
-    <div
-      ref={root}
-      className="min-h-screen"
-      style={{ background: NAVY, color: "white" }}
-    >
+    <div ref={root} className="min-h-screen" style={{ background: NAVY, color: "white" }}>
       <LeftRail />
       <LeftVideoBackground />
 
       <main className="pl-[88px] pr-6 md:pr-10 py-8">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <h1 className="reveal text-2xl md:text-3xl font-semibold">
-            Personalization
-          </h1>
+          <h1 className="reveal text-2xl md:text-3xl font-semibold">Personalization</h1>
 
           {/* Language + Voice + Scenarios */}
           <div className="reveal flex flex-wrap items-center gap-2">
             <select
-                className="rounded-md bg-white/10 border border-white/20 px-2 py-1 text-white"
-    value={prefs.language}
-              onChange={(e) =>
-                  setPrefs((p) => ({ ...p, language: e.target.value as Prefs["language"] }))
-              }
+              className="rounded-md bg-white/10 border border-white/20 px-2 py-1 text-white"
+              value={prefs.language}
+              onChange={(e) => setPrefs((p) => ({ ...p, language: e.target.value as Prefs["language"] }))}
               title="Language"
             >
               <option value="en">English</option>
@@ -390,41 +398,18 @@ export default function PersonalizeDashboard() {
 
             <button
               className={`text-xs px-3 py-2 rounded-lg border ${
-                prefs.voice_assist
-                  ? "bg-yellow-400 text-black"
-                  : "bg-white/5 text-white/85"
+                prefs.voice_assist ? "bg-yellow-400 text-black" : "bg-white/5 text-white/85"
               }`}
-              style={{
-                borderColor: prefs.voice_assist
-                  ? `${YELLOW}cc`
-                  : "rgba(255,255,255,0.18)",
-              }}
-              onClick={() =>
-                setPrefs((p) => ({ ...p, voice_assist: !p.voice_assist }))
-              }
+              style={{ borderColor: prefs.voice_assist ? `${YELLOW}cc` : "rgba(255,255,255,0.18)" }}
+              onClick={() => setPrefs((p) => ({ ...p, voice_assist: !p.voice_assist }))}
               title="Voice Assist"
             >
               {prefs.voice_assist ? "🔊 Voice: On" : "🔇 Voice: Off"}
             </button>
 
-            <ScenarioButton
-              active={peak}
-              label="Peak"
-              icon="⏰"
-              onClick={() => setPeak((v) => !v)}
-            />
-            <ScenarioButton
-              active={rain}
-              label="Rain"
-              icon="🌧️"
-              onClick={() => setRain((v) => !v)}
-            />
-            <ScenarioButton
-              active={trainDelay}
-              label="Delay"
-              icon="⚠️"
-              onClick={() => setTrainDelay((v) => !v)}
-            />
+            <ScenarioButton active={peak} label="Peak" icon="⏰" onClick={() => setPeak((v) => !v)} />
+            <ScenarioButton active={rain} label="Rain" icon="🌧️" onClick={() => setRain((v) => !v)} />
+            <ScenarioButton active={trainDelay} label="Delay" icon="⚠️" onClick={() => setTrainDelay((v) => !v)} />
           </div>
         </div>
 
@@ -436,26 +421,17 @@ export default function PersonalizeDashboard() {
               <PrefSlider
                 label="Time"
                 value={prefs.weights.time}
-                onChange={(v) =>
-                  setPrefs((p) => ({ ...p, weights: { ...p.weights, time: v } }))
-                }
+                onChange={(v) => setPrefs((p) => ({ ...p, weights: { ...p.weights, time: v } }))}
               />
               <PrefSlider
                 label="Cost"
                 value={prefs.weights.cost}
-                onChange={(v) =>
-                  setPrefs((p) => ({ ...p, weights: { ...p.weights, cost: v } }))
-                }
+                onChange={(v) => setPrefs((p) => ({ ...p, weights: { ...p.weights, cost: v } }))}
               />
               <PrefSlider
                 label="Comfort"
                 value={prefs.weights.comfort}
-                onChange={(v) =>
-                  setPrefs((p) => ({
-                    ...p,
-                    weights: { ...p.weights, comfort: v },
-                  }))
-                }
+                onChange={(v) => setPrefs((p) => ({ ...p, weights: { ...p.weights, comfort: v } }))}
               />
 
               <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
@@ -494,11 +470,7 @@ export default function PersonalizeDashboard() {
         </div>
       </main>
 
-      <Toast
-        msg={toastMsg}
-        visible={toastOpen}
-        onClose={() => setToastOpen(false)}
-      />
+      <Toast msg={toastMsg} visible={toastOpen} onClose={() => setToastOpen(false)} />
     </div>
   );
 }
@@ -509,11 +481,7 @@ function LeftRail() {
     <aside className="fixed left-0 top-0 h-full w-[72px] bg-black/25 backdrop-blur-sm rounded-r-3xl border-r border-white/10 flex flex-col items-center py-6 gap-4">
       <div
         className="h-10 w-10 rounded-2xl grid place-items-center"
-        style={{
-          background: "rgba(255,214,10,0.15)",
-          border: "1px solid rgba(255,214,10,0.35)",
-          color: YELLOW,
-        }}
+        style={{ background: "rgba(255,214,10,0.15)", border: "1px solid rgba(255,214,10,0.35)", color: YELLOW }}
       >
         <span className="font-bold">AI</span>
       </div>
@@ -565,13 +533,8 @@ function VehicleCard() {
       </div>
       <div className="w-full md:w-auto grid gap-2">
         <div className="inline-flex items-center gap-2 text-sm">
-          <span className="px-3 py-1 rounded-lg font-mono bg-black text-white border border-white/20">
-            XYZ-123
-          </span>
-          <a
-            className="text-[12px] text-white/70 underline underline-offset-4 hover:text-white"
-            href="#"
-          >
+          <span className="px-3 py-1 rounded-lg font-mono bg-black text-white border border-white/20">XYZ-123</span>
+          <a className="text-[12px] text-white/70 underline underline-offset-4 hover:text-white" href="#">
             View Documents
           </a>
         </div>
@@ -599,11 +562,7 @@ function SuggestionsCard({
         <div className="text-sm font-semibold">AI Suggestions</div>
         <span
           className="text-[11px] rounded-full px-2 py-0.5"
-          style={{
-            background: "rgba(255,214,10,0.15)",
-            color: YELLOW,
-            border: `1px solid ${YELLOW}55`,
-          }}
+          style={{ background: "rgba(255,214,10,0.15)", color: YELLOW, border: `1px solid ${YELLOW}55` }}
         >
           Live
         </span>
@@ -619,30 +578,16 @@ function SuggestionsCard({
         {suggestions.map((s) => {
           const isApplied = !!applied[s.id];
           return (
-            <div
-              key={s.id}
-              className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.06] p-4"
-            >
-              <div
-                className="h-8 w-8 rounded-lg grid place-items-center text-black"
-                style={{ background: YELLOW }}
-              >
-                {s.kind.includes("rail")
-                  ? "🚆"
-                  : s.kind.includes("cost")
-                  ? "🚌"
-                  : "🛺"}
+            <div key={s.id} className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.06] p-4">
+              <div className="h-8 w-8 rounded-lg grid place-items-center text-black" style={{ background: YELLOW }}>
+                {s.kind.includes("rail") ? "🚆" : s.kind.includes("cost") ? "🚌" : "🛺"}
               </div>
               <div className="flex-1">
                 <div className="text-sm font-medium">{t(s.title, lang)}</div>
-                <div className="text-xs text-white/70 mt-0.5">
-                  {t(s.body, lang)}
-                </div>
+                <div className="text-xs text-white/70 mt-0.5">{t(s.body, lang)}</div>
               </div>
               {isApplied ? (
-                <div className="text-[11px] px-2 py-1 rounded-lg bg-white/10 border border-white/20">
-                  Applied ✓
-                </div>
+                <div className="text-[11px] px-2 py-1 rounded-lg bg-white/10 border border-white/20">Applied ✓</div>
               ) : (
                 <button
                   onClick={() => applySuggestion(s)}
@@ -675,15 +620,7 @@ function MapCard() {
   );
 }
 
-function Stat({
-  label,
-  unit,
-  count,
-}: {
-  label: string;
-  unit?: string;
-  count: number;
-}) {
+function Stat({ label, unit, count }: { label: string; unit?: string; count: number }) {
   return (
     <div className="rounded-2xl p-4 bg-black/40 border border-white/10">
       <div className="text-xs text-white/70">{label}</div>

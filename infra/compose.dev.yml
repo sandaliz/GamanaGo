@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: stc
       POSTGRES_DB: gamanagodb
     ports:
-      - "5432:5432"   # change host-side if 5432 is taken on your Mac
+      - "5432:5432" # change host-side if 5432 is taken on your Mac
     volumes:
       - pgdata:/var/lib/postgresql/data
       # Auto-run on first init
@@ -89,10 +89,15 @@ services:
   # Use *this* one (drop the old "profile-agent")
   profile-personalizer:
     build: ../apps/agents/profile-personalizer
-    env_file: ../.env.example
+    env_file:
+      - ../apps/agents/profile-personalizer/.env
+    environment:
+     AGGREGATOR_URL: http://data-aggregator:8001  
     depends_on:
       postgres:
         condition: service_healthy
+      data-aggregator:                               # <— optional but nice
+       condition: service_started
     ports:
       - "8004:8004"
     volumes:
@@ -146,9 +151,14 @@ services:
     env_file: ../.env.example
     environment:
       NODE_ENV: development
+      DATABASE_URL: postgres://onella:onella_pw@postgres:5432/gamanagodb
+      PROFILE_AGENT_URL: http://profile-personalizer:8004
+      ROUTE_AGENT_URL: http://route-optimizer:8002
+      SEED_USER_ID: 1042c8a5-81b8-459d-a1fd-6d7f9ebc097a
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
     ports:
+      - "3000:3000"
       - "3001:3000"
     command: npm run dev -- -p 3000 -H 0.0.0.0
     volumes:

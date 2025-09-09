@@ -2,7 +2,7 @@ from fastapi import FastAPI, Query
 from .gtfs_loader import load_gtfs, build_transfers, list_routes, list_stops, build_report
 from fastapi.middleware.cors import CORSMiddleware
 from .realtime import router as realtime_router
-
+from .context import router as context_router 
 app = FastAPI(title="Data Aggregator")
 
 app.add_middleware(
@@ -13,7 +13,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(realtime_router, prefix="/realtime", tags=["realtime"])
-
+app.include_router(context_router,  prefix="/context",  tags=["context"]) 
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "data-aggregator"}

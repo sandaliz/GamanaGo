@@ -9,6 +9,8 @@ import socketio
 
 AGG_URL = os.getenv("AGG_URL", "http://data-aggregator:8001")
 OPT_URL = os.getenv("OPT_URL", "http://route-optimizer:8002")
+PROFILE_URL = os.getenv("PROFILE_URL", "http://profile-personalizer:8004")
+SEED_USER   = os.getenv("SEED_USER_ID", "1042c8a5-81b8-459d-a1fd-6d7f9ebc097a")
 
 # --- Socket.IO server (why: realtime push to browser) ---
 sio = socketio.AsyncServer(
@@ -31,6 +33,30 @@ app.add_middleware(
 def health():
     return {"status": "ok", "service": "gateway", "agg": AGG_URL, "opt": OPT_URL}
 
+
+
+@app.get("/api/profile/preferences")
+async def api_profile_prefs(user_id: str = Query(...)):
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(f"{PROFILE_URL}/profile/{user_id}/preferences")
+        return JSONResponse(r.json(), status_code=r.status_code)
+
+@app.get("/api/profile/suggestions")
+async def api_profile_suggestions(user_id: str = Query(...)):
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(f"{PROFILE_URL}/profile/{user_id}/suggestions")
+        return JSONResponse(r.json(), status_code=r.status_code)
+
+@app.post("/api/profile/suggestions/apply")
+async def api_apply_suggestion(req: Request):
+    body = await req.json()
+    user_id = body["user_id"]; sug_id = body["suggestion_id"]
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(f"{PROFILE_URL}/profile/{user_id}/suggestions/{sug_id}/apply")
+        return JSONResponse(r.json(), status_code=r.status_code)
+
+
+
 # ---------- Proxy APIs (unchanged) ----------
 @app.get("/api/routes")
 async def routes():
@@ -41,14 +67,22 @@ async def routes():
 @app.get("/api/stops/bbox")
 async def stops_bbox(bbox: str = Query(..., description="minLon,minLat,maxLon,maxLat")):
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{AGG_URL}/stops/bbox", params={"bbox": bbox}, timeout=30)
-        return JSONResponse(r.json())
+        # FIX: call /stops with the bbox query param
+        r = await client.get(f"{AGG_URL}/stops", params={"bbox": bbox}, timeout=30)
+        return JSONResponse(r.json(), status_code=r.status_code)
+
 
 @app.post("/api/plan")
 async def api_plan(req: Request):
     payload = await req.json()
     async with httpx.AsyncClient() as client:
         r = await client.post(f"{OPT_URL}/plan", json=payload, timeout=60)
+        return JSONResponse(r.json(), status_code=r.status_code)
+    
+@app.get("/api/context")
+async def api_context(user_id: str = Query(...)):
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{AGG_URL}/context/{user_id}")
         return JSONResponse(r.json(), status_code=r.status_code)
 
 @app.post("/api/plan/latlon")
@@ -57,6 +91,83 @@ async def api_plan_latlon(req: Request):
     async with httpx.AsyncClient() as client:
         r = await client.post(f"{OPT_URL}/plan/latlon", json=payload, timeout=60)
         return JSONResponse(r.json(), status_code=r.status_code)
+
+
+
+
+
+@app.post("/api/plan/compose")
+async def plan_compose(req: Request):
+    body = await req.json()
+    user_id = body.get("user_id") or SEED_USER
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        # 1) fetch prefs (from personalizer)
+        p = await client.get(f"{PROFILE_URL}/profile/{user_id}/preferences")
+        if p.status_code != 200:
+            # pass through whatever came back so callers can see it
+            try:
+                detail = p.json()
+            except ValueError:
+                detail = p.text
+            return JSONResponse(
+                {"error": "prefs fetch failed", "status": p.status_code, "detail": detail},
+                status_code=502,
+            )
+
+        try:
+            prefs = p.json()
+        except ValueError:
+            return JSONResponse(
+                {"error": "prefs were not JSON", "raw": p.text},
+                status_code=502,
+            )
+
+        # walk limit from prefs (default 800)
+        try:
+            max_walk_m = int(prefs.get("walk_limit_m", 800))
+        except Exception:
+            max_walk_m = 800  # be safe if someone stored a weird value
+
+        # 2) plan with optimizer
+        payload = dict(body)
+        payload["max_walk_m"] = max_walk_m
+
+        r = await client.post(f"{OPT_URL}/plan", json=payload)
+
+        # if optimizer returns non-JSON (e.g., an error page), report it clearly
+        try:
+            data = r.json()
+        except ValueError:
+            return JSONResponse(
+                {"error": "optimizer returned non-JSON", "status": r.status_code, "raw": r.text},
+                status_code=502,
+            )
+
+        # annotate for visibility
+        data["_used_walk_limit_m"] = max_walk_m
+
+        # 3) best-effort behavior log (don’t fail compose if this errors)
+        try:
+            await client.post(
+                f"{PROFILE_URL}/profile/{user_id}/behavior",
+                json={
+                    "mode_chosen": "bus",
+                    "travel_time": data.get("duration_min", 0),
+                    "travel_cost": 0,
+                },
+            )
+        except Exception:
+            pass
+
+        return JSONResponse(data, status_code=r.status_code)
+
+
+
+
+
+
+
 
 # ---------- Simple notify endpoint (why: any service can push an event) ----------
 @app.post("/events/notify")
@@ -132,3 +243,17 @@ async def leave(sid, data):
 
 # 👇 export the combined ASGI app (this is what uvicorn will run)
 asgi = socketio.ASGIApp(sio, other_asgi_app=app)
+
+
+@app.post("/api/reload")
+async def reload_all():
+    async with httpx.AsyncClient(timeout=120) as client:
+        a = await client.post(f"{AGG_URL}/load/gtfs")
+        b = await client.post(f"{AGG_URL}/build/transfers", params={"max_meters": 600})
+        c = await client.post(f"{OPT_URL}/snapshot/refresh")
+        return {
+            "ok": True,
+            "gtfs": a.json() if a.headers.get("content-type","").startswith("application/json") else a.text,
+            "transfers": b.json() if b.headers.get("content-type","").startswith("application/json") else b.text,
+            "optimizer": c.json() if c.headers.get("content-type","").startswith("application/json") else c.text,
+        }

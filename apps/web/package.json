@@ -16,18 +16,24 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "leaflet": "^1.9.4",
-    "react-leaflet": "^4.2.1",
+    "@mapbox/polyline": "^1.2.1",
+    "framer-motion": "^12.23.12",
     "gsap": "^3.13.0",
-    "next": "15.5.2",
+    "leaflet": "^1.9.4",
+    "leaflet-routing-machine": "^3.2.12",
+    "lucide-react": "^0.543.0",
+    "next": "14.2.32",
     "pg": "^8.16.3",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "react-leaflet": "^4.2.1"
   },
   "devDependencies": {
-    "@types/node": "24.3.0",
+    "@types/node": "^24.3.0",
     "@types/react": "19.1.12",
     "autoprefixer": "^10.4.19",
+    "browserslist": "^4.25.4",
+    "caniuse-lite": "^1.0.30001741",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.13",
     "typescript": "5.9.2"

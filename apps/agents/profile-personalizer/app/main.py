@@ -4,10 +4,13 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import os, asyncpg, json, uuid
 from datetime import datetime
+import httpx
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL missing")
+
+AGGREGATOR_URL = os.getenv("AGGREGATOR_URL", "http://data-aggregator:8001")
 
 app = FastAPI(title="Profile Personalization Agent")
 
@@ -35,7 +38,7 @@ class BehaviorIn(BaseModel):
     travel_cost: int
 
 class SuggestionOut(BaseModel):
-    id: str                 # expose as string (DB column is TEXT)
+    id: str
     kind: str
     title: Dict[str, str]
     body: Dict[str, str]
@@ -62,33 +65,55 @@ def _coerce_json(v):
     return v
 
 async def fetch_context(user_id: str):
-    # Placeholder for cross-agent context (weather, disruptions, etc.)
-    now = datetime.now()
-    return {
-        "peak_hour": now.hour in range(7, 10) or now.hour in range(16, 19),
-        "rain": False,
-        "train_delayed": False,
-    }
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            r = await client.get(f"{AGGREGATOR_URL}/context/{user_id}")
+            r.raise_for_status()
+            ctx = r.json()
+            return {
+                "peak_hour": bool(ctx.get("peak_hour")),
+                "rain": bool(ctx.get("rain")),
+                "train_delayed": bool(ctx.get("train_delayed")),
+            }
+    except Exception:
+        now = datetime.now()
+        return {
+            "peak_hour": now.hour in range(7, 10) or now.hour in range(16, 19),
+            "rain": False,
+            "train_delayed": False,
+        }
 
 def adjust_weights(prefs: dict, context: dict):
     weights = dict(prefs.get("weights") or {})
     walk_limit = prefs.get("walk_limit_m", 900)
+    reasons = []
 
     if context.get("peak_hour"):
-        weights["time"] = min(100, int(weights.get("time", 50)) + 10)
+        old = int(weights.get("time", 50))
+        weights["time"] = min(100, old + 10)
+        reasons.append({"field": "weights.time", "from": old, "to": weights["time"], "because": "peak_hour"})
+
     if context.get("rain"):
+        old = walk_limit
         walk_limit = min(walk_limit, 500)
+        if walk_limit != old:
+            reasons.append({"field": "walk_limit_m", "from": old, "to": walk_limit, "because": "rain"})
+
     if context.get("train_delayed"):
-        weights["train"] = max(0, int(weights.get("train", 50)) - 20)
-        weights["bus"] = min(100, int(weights.get("bus", 50)) + 10)
+        old_train = int(weights.get("train", 50))
+        old_bus = int(weights.get("bus", 50))
+        weights["train"] = max(0, old_train - 20)
+        weights["bus"] = min(100, old_bus + 10)
+        reasons.append({"field": "weights.train", "from": old_train, "to": weights["train"], "because": "train_delayed"})
+        reasons.append({"field": "weights.bus", "from": old_bus, "to": weights["bus"], "because": "train_delayed"})
 
     prefs["weights"] = weights
     prefs["walk_limit_m"] = walk_limit
+    prefs["_context_used"] = context
+    prefs["_adjust_reasons"] = reasons
     return prefs
 
-# Deterministic per-user suggestion IDs (TEXT)
 def sug_id(user_id: str, suffix: str) -> str:
-    # make a stable UUIDv5 then stringify it; safe to store in TEXT too
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"https://gamanago/suggestions/{user_id}/{suffix}"))
 
 # ---------- Health ----------
@@ -104,7 +129,7 @@ async def get_prefs(user_id: str):
             """
             SELECT weights, language, walk_limit_m, voice_assist, accessibility
             FROM user_preferences
-            WHERE user_id = $1
+            WHERE user_id = $1::uuid
             """,
             user_id,
         )
@@ -119,7 +144,6 @@ async def get_prefs(user_id: str):
         "accessibility": _coerce_json(row["accessibility"]),
     }
 
-    # Context-aware tweaks (not persisted)
     context = await fetch_context(user_id)
     prefs = adjust_weights(prefs, context)
     return prefs
@@ -136,7 +160,7 @@ async def put_prefs(user_id: str, body: PrefsIn):
                 voice_assist  = COALESCE($5, voice_assist),
                 accessibility = COALESCE($6::jsonb, accessibility),
                 updated_at    = now()
-            WHERE user_id = $1
+            WHERE user_id = $1::uuid
             """,
             user_id,
             json.dumps(body.weights) if body.weights is not None else None,
@@ -164,7 +188,7 @@ async def onboarding(user_id: str, body: OnboardingIn):
         await conn.execute(
             """
             INSERT INTO user_preferences (user_id, weights, language, walk_limit_m, voice_assist, accessibility)
-            VALUES ($1, $2::jsonb, $3, $4, $5, $6::jsonb)
+            VALUES ($1::uuid, $2::jsonb, $3, $4, $5, $6::jsonb)
             ON CONFLICT (user_id) DO NOTHING
             """,
             user_id,
@@ -176,7 +200,7 @@ async def onboarding(user_id: str, body: OnboardingIn):
         )
     return {"ok": True, "weights": weights, "walk_limit_m": walk_limit_m}
 
-# ---------- Behavior (log to agent_interaction to avoid missing user_behavior table) ----------
+# ---------- Behavior logging ----------
 @app.post("/profile/{user_id}/behavior")
 async def log_behavior(user_id: str, body: BehaviorIn):
     async with app.state.pool.acquire() as conn:
@@ -190,16 +214,16 @@ async def log_behavior(user_id: str, body: BehaviorIn):
         )
     return {"ok": True}
 
-# ---------- Suggestions (single endpoint) ----------
+# ---------- Suggestions ----------
 @app.get("/profile/{user_id}/suggestions", response_model=List[SuggestionOut])
 async def get_suggestions(user_id: str):
-    # 1) Load current prefs for light tailoring
+    # 1) Load prefs
     async with app.state.pool.acquire() as conn:
         prefs_row = await conn.fetchrow(
             """
             SELECT weights, language, walk_limit_m, voice_assist
             FROM user_preferences
-            WHERE user_id = $1
+            WHERE user_id = $1::uuid
             """,
             user_id,
         )
@@ -215,7 +239,7 @@ async def get_suggestions(user_id: str):
         walk_limit_m = prefs_row["walk_limit_m"] or walk_limit_m
         voice = prefs_row["voice_assist"] if prefs_row["voice_assist"] is not None else voice
 
-    # 2) Define suggestions (deterministic per-user UUIDs; full i18n)
+    # 2) Define suggestions (deterministic IDs + i18n)
     fast_vs_cost = SuggestionOut(
         id=str(sug_id(user_id, "cost_saver_if_peak")),
         kind="cost",
@@ -229,7 +253,7 @@ async def get_suggestions(user_id: str):
             "si": "ගොඩක් කිරිමැස්සෙදි අඩු වියදම් මාර්ග වෙත ටිකක් මාරුවන්න.",
             "ta": "அதிரடியான நேரங்களில் மலிவு பாதைகளுக்கு சிறிது மாற்றவும்.",
         },
-       payload={"weights": {"cost": "+10", "time": -5}},
+        payload={"weights": {"cost": "+10", "time": -5}},
     )
 
     faster_commute = SuggestionOut(
@@ -253,7 +277,7 @@ async def get_suggestions(user_id: str):
         kind="comfort",
         title={
             "en": "A bit more comfort on longer walks",
-            "si": "දිගු පාගැනීම් සඳහා අඩු තරමකට ආරामය",
+            "si": "දිගු පාගැනීම් සඳහා අඩු තරමකට ආරමය",
             "ta": "நீண்ட நடைகளில் சிறிது நிம்மதி",
         },
         body={
@@ -264,15 +288,48 @@ async def get_suggestions(user_id: str):
         payload={"weights": {"comfort": "+5"}},
     )
 
-    # 3) Always show three (we still order with light tailoring)
-    base = [fast_vs_cost, faster_commute, comfort_bump]
-    # simple ordering: if you already value time highly, lead with the time suggestion
-    if int(weights.get("time", 50)) >= 60 and int(weights.get("cost", 50)) <= 50:
-        chosen = [faster_commute, fast_vs_cost, comfort_bump]
-    else:
-        chosen = [fast_vs_cost, faster_commute, comfort_bump]
+    shorter_walks = SuggestionOut(
+        id=str(sug_id(user_id, "shorter_walks")),
+        kind="comfort",
+        title={
+            "en": "Prefer shorter walks",
+            "si": "දිගු පා ගමන් අඩු කරමු",
+            "ta": "குறைந்த நடைதூரத்தை விரும்பு",
+        },
+        body={
+            "en": "Reduce your walking limit to avoid long transfers.",
+            "si": "දිගු මාරු වලින් වලකිමට ඔබේ පා ගමන් සීමාව අඩු කරන්න.",
+            "ta": "நீண்ட மாற்றங்களை தவிர்க்க நடை வரம்பை குறைக்கவும்.",
+        },
+        payload={"walk_limit_m": "-200"},
+    )
 
-    # 4) Upsert full records (id is TEXT in DB, user_id is UUID)
+    # 3) Pull live context and rank
+    context = await fetch_context(user_id)
+
+    def score(s: SuggestionOut) -> int:
+        base = 0
+        if s.kind == "time":
+            base = int(weights.get("time", 50))
+            if context.get("peak_hour"):
+                base += 40
+        elif s.kind == "comfort":
+            base = int(weights.get("comfort", 50))
+            if context.get("rain"):
+                base += 30
+        elif s.kind == "cost":
+            base = int(weights.get("cost", 50))
+            if not context.get("peak_hour"):
+                base += 10
+        return base
+
+    chosen = sorted(
+        [fast_vs_cost, faster_commute, comfort_bump, shorter_walks],
+        key=score,
+        reverse=True,
+    )
+
+    # 4) Upsert
     async with app.state.pool.acquire() as conn:
         async with conn.transaction():
             for s in chosen:
@@ -313,13 +370,16 @@ async def apply_suggestion(user_id: str, suggestion_id: str):
             weights_delta = payload.get("weights") or {}
 
             cur = await conn.fetchrow(
-                "SELECT weights FROM user_preferences WHERE user_id=$1::uuid",
+                "SELECT weights, walk_limit_m FROM user_preferences WHERE user_id=$1::uuid",
                 user_id
             )
             if not cur:
                 raise HTTPException(404, "Preferences not found")
 
             weights = _coerce_json(cur["weights"]) or {}
+            walk_limit = cur["walk_limit_m"] or 800
+
+            # apply weight deltas
             for k, v in weights_delta.items():
                 try:
                     delta = int(str(v).replace("+", ""))
@@ -327,9 +387,21 @@ async def apply_suggestion(user_id: str, suggestion_id: str):
                     delta = 0
                 weights[k] = max(0, min(100, int(weights.get(k, 50)) + delta))
 
+            # NEW: apply walk_limit_m delta if provided
+            if "walk_limit_m" in payload:
+                try:
+                    wdelta = int(str(payload["walk_limit_m"]).replace("+", ""))
+                except Exception:
+                    wdelta = 0
+                walk_limit = max(100, min(3000, int(walk_limit) + wdelta))
+
             await conn.execute(
-                "UPDATE user_preferences SET weights=$2::jsonb, updated_at=now() WHERE user_id=$1::uuid",
-                user_id, json.dumps(weights)
+                """
+                UPDATE user_preferences
+                SET weights=$2::jsonb, walk_limit_m=$3::int, updated_at=now()
+                WHERE user_id=$1::uuid
+                """,
+                user_id, json.dumps(weights), walk_limit
             )
             await conn.execute(
                 "UPDATE agent_suggestion SET applied_at=now() WHERE id=$1",
@@ -340,7 +412,7 @@ async def apply_suggestion(user_id: str, suggestion_id: str):
                 user_id, json.dumps({"suggestion_id": suggestion_id})
             )
 
-    return {"ok": True, "weights": weights}
+    return {"ok": True, "weights": weights, "walk_limit_m": walk_limit}
 
 # ---------- Events & Feedback ----------
 @app.post("/profile/{user_id}/events")

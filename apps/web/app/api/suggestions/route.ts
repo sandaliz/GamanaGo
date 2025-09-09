@@ -1,41 +1,68 @@
-// import { NextRequest, NextResponse } from "next/server";
 
-// const PROFILE_AGENT = process.env.PROFILE_AGENT_URL || "http://profile-agent:8001";
-// const USER_ID = process.env.SEED_USER_ID || "";
+
+// import { NextResponse } from "next/server";
+
+// const base =
+//   process.env.PROFILE_AGENT_URL ??
+//   process.env.NEXT_PUBLIC_PROFILE_URL ??
+//   "http://profile-personalizer:8004";
+
+// const uid =
+//   process.env.SEED_USER_ID ??
+//   process.env.NEXT_PUBLIC_SEED_USER_ID ??
+//   "1042c8a5-81b8-459d-a1fd-6d7f9ebc097a";
 
 // export async function GET() {
-//   const r = await fetch(`${PROFILE_AGENT}/profile/${USER_ID}/suggestions`, { cache: "no-store" });
-//   return NextResponse.json(await r.json(), { status: r.status });
+//   try {
+//     const r = await fetch(`${base}/profile/${uid}/suggestions`, { cache: "no-store" });
+//     const data = await r.json();
+//     return NextResponse.json(data, { status: r.status });
+//   } catch (e) {
+//     return NextResponse.json({ ok: false, error: "proxy GET /suggestions failed" }, { status: 500 });
+//   }
 // }
 
-// export async function POST(req: NextRequest) {
-//   const { suggestionId } = await req.json();
-//   const url = `${PROFILE_AGENT}/profile/${USER_ID}/suggestions/${suggestionId}/apply`;
-//   const r = await fetch(url, { method: "POST" });
-//   return NextResponse.json(await r.json(), { status: r.status });
+// export async function POST(req: Request) {
+//   try {
+//     const { suggestionId } = await req.json();
+//     const r = await fetch(`${base}/profile/${uid}/suggestions/${suggestionId}/apply`, {
+//       method: "POST",
+//     });
+//     const data = await r.json().catch(() => ({}));
+//     return NextResponse.json(data, { status: r.status });
+//   } catch (e) {
+//     return NextResponse.json({ ok: false, error: "proxy POST /suggestions failed" }, { status: 500 });
+//   }
 // }
+export const runtime = "nodejs";
+const PROFILE = process.env.PROFILE_BASE_URL;
+const USER = process.env.NEXT_PUBLIC_USER_ID;
 
-
-import { NextResponse } from "next/server";
-
-const BASE = process.env.PROFILE_AGENT_URL!;
-const USER = process.env.SEED_USER_ID!;
-
-/** GET → list suggestions */
 export async function GET() {
-  const r = await fetch(`${BASE}/profile/${USER}/suggestions`, { cache: "no-store" });
-  if (!r.ok) return NextResponse.json({ error: "agent error" }, { status: r.status });
-  const data = await r.json();
-  return NextResponse.json(data);
+  try {
+    const r = await fetch(`${PROFILE}/profile/${USER}/suggestions`, { cache: "no-store" });
+    const txt = await r.text();
+    let data; try { data = JSON.parse(txt); } catch { data = []; }
+    return new Response(JSON.stringify(data), { headers: { "content-type": "application/json" }});
+  } catch (e) {
+    // Fail soft so the UI still renders
+    return new Response(JSON.stringify([]), { headers: { "content-type": "application/json" }});
+  }
 }
 
-/** POST → apply a suggestion (matches your React code) */
-export async function POST(req: Request) {
-  const { suggestionId } = await req.json().catch(() => ({}));
-  if (!suggestionId) return NextResponse.json({ error: "suggestionId required" }, { status: 400 });
-
-  const r = await fetch(`${BASE}/profile/${USER}/suggestions/${suggestionId}/apply`, { method: "POST" });
-  if (!r.ok) return NextResponse.json({ error: "agent error" }, { status: r.status });
-  const data = await r.json();
-  return NextResponse.json(data);
+export async function POST(req) {
+  try {
+    const { suggestionId } = await req.json();
+    const r = await fetch(`${PROFILE}/profile/${USER}/suggestions/${suggestionId}/apply`, {
+      method: "POST",
+    });
+    const txt = await r.text();
+    let data; try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+    if (!r.ok) throw new Error(data.error || data.raw || "apply failed");
+    return new Response(JSON.stringify({ ok: true, ...data }), { headers: { "content-type": "application/json" }});
+  } catch (e) {
+    return new Response(JSON.stringify({ ok: false, error: e?.message || "apply failed" }), {
+      status: 500, headers: { "content-type": "application/json" },
+    });
+  }
 }
