@@ -1,3 +1,7 @@
 fastapi
 uvicorn[standard]
 python-dotenv
+googletrans==4.0.0-rc1
+langdetect
+fasttext==0.9.3
+numpy<2.0.0
