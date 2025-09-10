@@ -152,18 +152,29 @@ services:
     environment:
       NODE_ENV: development
       DATABASE_URL: postgres://onella:onella_pw@postgres:5432/gamanagodb
-      PROFILE_AGENT_URL: http://profile-personalizer:8004
-      ROUTE_AGENT_URL: http://route-optimizer:8002
+      PLANNER_BASE_URL: http://route-optimizer:8002
+      PROFILE_BASE_URL: http://profile-personalizer:8004
+      CONTEXT_BASE_URL: http://data-aggregator:8001
+      OSRM_URL: https://router.project-osrm.org
+
+    # ----- CLIENT-SIDE (browser) envs (NEXT_PUBLIC_*) -----
+      NEXT_PUBLIC_USER_ID: 1042c8a5-81b8-459d-a1fd-6d7f9ebc097a
+      NEXT_PUBLIC_GATEWAY_URL: http://localhost:8000
+      NEXT_PUBLIC_PROFILE_URL: http://localhost:8004
+      NEXT_PUBLIC_MAPBOX_TOKEN: your_mapbox_token_here
+      # NEXT_PUBLIC_USER_ID: 1042c8a5-81b8-459d-a1fd-6d7f9ebc097a
       SEED_USER_ID: 1042c8a5-81b8-459d-a1fd-6d7f9ebc097a
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
     ports:
       - "3000:3000"
       - "3001:3000"
-    command: npm run dev -- -p 3000 -H 0.0.0.0
+    command: sh -lc "npm ci --no-audit --no-fund && npm run dev -- -p 3000 -H 0.0.0.0"
+
     volumes:
       - ../apps/web:/app
       - /app/node_modules
+      - /app/.next
     depends_on:
       - gateway
 

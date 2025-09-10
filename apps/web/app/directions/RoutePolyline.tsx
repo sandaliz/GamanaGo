@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo } from "react";
 import { Polyline, useMap } from "react-leaflet";
-import polyline from "@mapbox/polyline";
+import polyline from 'polyline';
 import type { LatLngTuple } from "leaflet";
 
 export default function RoutePolyline({ encoded }: { encoded: string }) {

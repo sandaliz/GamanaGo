@@ -32,7 +32,8 @@ class StopEvent:
 
 # ---- snapshot (prefetch GTFS into RAM) ----------------------------
 _snapshot = None
-
+_stop_names_cache = None
+_stop_info_cache = None  
 # ---- snapshot (prefetch GTFS into RAM) ----------------------------
 
 def load_snapshot():
@@ -126,12 +127,16 @@ def load_snapshot_cached():
         _snapshot = load_snapshot()
     return _snapshot
 
+# def refresh_snapshot():
+#     global _snapshot
+#     _snapshot = load_snapshot()
 def refresh_snapshot():
-    global _snapshot
+    global _snapshot, _stop_info_cache, _stop_names_cache   # <— add globals
     _snapshot = load_snapshot()
-
-
     _stop_info_cache = None
+    _stop_names_cache = None
+
+
 
 def _load_stop_info():
     with ENGINE.begin() as c:
@@ -288,7 +293,6 @@ def plan(
 
 
 # --- add near the other module globals ---
-_stop_names_cache = None
 
 def _load_stop_names():
     with ENGINE.begin() as c:

@@ -1,62 +1,137 @@
-'use client';
+"use client";
 
-import {useEffect, useRef, useState} from 'react';
+import { useEffect, useRef, useState } from "react";
 
-export default function DriverSimulator() {
-  const base = process.env.NEXT_PUBLIC_AGGREGATOR_URL!;
-  const [tripId, setTripId] = useState('TNCG2_0700');
-  const [sending, setSending] = useState(false);
-  const watchRef = useRef<number | null>(null);
+const GW =
+  process.env.NEXT_PUBLIC_GATEWAY_URL || "http://192.168.1.102:3000/driver";
 
-  const sendBeacon = async (lat: number, lon: number, speedKph?: number) => {
-    try {
-      await fetch(`${base}/realtime/driver/beacon`, {
-        method: 'POST',
-        headers: {'content-type':'application/json'},
-        body: JSON.stringify({ trip_id: tripId, lat, lon, speed_kph: speedKph ?? 0 })
-      });
-    } catch {}
-  };
+export default function DriverBeaconPage() {
+  const [tripId, setTripId] = useState("TNCG2_0700"); // set to any trip_id from your plan
+  const [running, setRunning] = useState(false);
+  const [status, setStatus] = useState("Idle");
+  const watchIdRef = useRef<number | null>(null);
 
-  const start = () => {
-    if (!navigator.geolocation) {
-      alert('Geolocation not supported');
+  useEffect(() => {
+    return () => {
+      // cleanup on unload
+      if (watchIdRef.current != null && "geolocation" in navigator) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, []);
+
+  function start() {
+    if (!("geolocation" in navigator)) {
+      setStatus("Geolocation not supported on this device/browser.");
       return;
     }
-    setSending(true);
-    watchRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude, speed } = pos.coords;
-        const speedKph = (speed ?? 0) * 3.6; // m/s -> km/h
-        sendBeacon(latitude, longitude, speedKph);
-      },
-      (err) => { console.warn(err); },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-    );
-  };
-
-  const stop = () => {
-    setSending(false);
-    if (watchRef.current !== null) {
-      navigator.geolocation.clearWatch(watchRef.current);
-      watchRef.current = null;
+    if (!tripId.trim()) {
+      setStatus("Please enter a trip_id.");
+      return;
     }
-  };
 
-  useEffect(() => () => stop(), []);
+    setRunning(true);
+    setStatus("Requesting location permission…");
+
+    const id = navigator.geolocation.watchPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const speedMps = pos.coords.speed ?? 0; // m/s (may be null)
+        const speedKph = speedMps ? speedMps * 3.6 : 0;
+
+        setStatus(
+          `Sending: lat=${lat.toFixed(6)}, lon=${lon.toFixed(
+            6
+          )} (${speedKph.toFixed(1)} km/h)`
+        );
+
+        try {
+          const r = await fetch(`${GW}/api/realtime/beacon`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              trip_id: tripId,
+              lat,
+              lon,
+              speed_kph: speedKph,
+            }),
+          });
+          // not strictly needed to parse the body; this endpoint returns {"ok": true}
+          await r.text();
+        } catch (e: any) {
+          setStatus(`Send failed: ${e?.message || e}`);
+        }
+      },
+      (err) => {
+        setStatus(`Location error: ${err.message}`);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 2000,
+        timeout: 10000,
+      }
+    );
+
+    watchIdRef.current = id;
+  }
+
+  function stop() {
+    if (watchIdRef.current != null && "geolocation" in navigator) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    setRunning(false);
+    setStatus("Stopped");
+  }
 
   return (
-    <main style={{padding: 24}}>
-      <h1>Driver Beacon Simulator</h1>
-      <label>
-        Trip ID:&nbsp;
-        <input value={tripId} onChange={e=>setTripId(e.target.value)} />
-      </label>
-      <div style={{marginTop: 12}}>
-        {!sending ? <button onClick={start}>Start</button> : <button onClick={stop}>Stop</button>}
+    <div className="max-w-xl mx-auto p-6 space-y-4">
+      <h1 className="text-2xl font-semibold">Driver / Phone GPS Beacon</h1>
+
+      <p className="text-sm text-gray-600">
+        This page uses your phone’s GPS to publish a “bus position” for a given{" "}
+        <code>trip_id</code> to the backend.
+      </p>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Trip ID</label>
+        <input
+          className="w-full border rounded-lg px-3 py-2"
+          value={tripId}
+          onChange={(e) => setTripId(e.target.value)}
+          placeholder="e.g., TNCG2_0700"
+        />
       </div>
-      <p style={{marginTop: 8}}>POSTing to {base}/realtime/driver/beacon</p>
-      <p><small>Tip: open this page on your phone to stream your GPS.</small></p>
-    </main>
+
+      <div className="flex gap-3">
+        {!running ? (
+          <button
+            onClick={start}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg"
+          >
+            Start sending GPS
+          </button>
+        ) : (
+          <button
+            onClick={stop}
+            className="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded-lg"
+          >
+            Stop
+          </button>
+        )}
+      </div>
+
+      <div className="text-sm text-gray-700">
+        <b>Status:</b> {status}
+      </div>
+
+      <div className="text-xs text-gray-500">
+        Tip: On iOS, Safari requires HTTPS for high-accuracy GPS. If you need to
+        test from your phone over the internet, expose your dev server with
+        <code className="mx-1">ngrok http 8000</code> and set{" "}
+        <code>NEXT_PUBLIC_GATEWAY_URL</code> to that HTTPS URL.
+      </div>
+    </div>
   );
 }

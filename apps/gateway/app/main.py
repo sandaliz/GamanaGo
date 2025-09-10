@@ -96,46 +96,105 @@ async def api_plan_latlon(req: Request):
 
 
 
+# @app.post("/api/plan/compose")
+# async def plan_compose(req: Request):
+#     body = await req.json()
+#     user_id = body.get("user_id") or SEED_USER
+
+#     async with httpx.AsyncClient(timeout=30) as client:
+#         # 1) fetch prefs (from personalizer)
+#         p = await client.get(f"{PROFILE_URL}/profile/{user_id}/preferences")
+#         if p.status_code != 200:
+#             # pass through whatever came back so callers can see it
+#             try:
+#                 detail = p.json()
+#             except ValueError:
+#                 detail = p.text
+#             return JSONResponse(
+#                 {"error": "prefs fetch failed", "status": p.status_code, "detail": detail},
+#                 status_code=502,
+#             )
+
+#         try:
+#             prefs = p.json()
+#         except ValueError:
+#             return JSONResponse(
+#                 {"error": "prefs were not JSON", "raw": p.text},
+#                 status_code=502,
+#             )
+
+#         # walk limit from prefs (default 800)
+#         try:
+#             max_walk_m = int(prefs.get("walk_limit_m", 800))
+#         except Exception:
+#             max_walk_m = 800  # be safe if someone stored a weird value
+
+#         # 2) plan with optimizer
+#         payload = dict(body)
+#         payload["max_walk_m"] = max_walk_m
+
+#         r = await client.post(f"{OPT_URL}/plan", json=payload)
+
+#         # if optimizer returns non-JSON (e.g., an error page), report it clearly
+#         try:
+#             data = r.json()
+#         except ValueError:
+#             return JSONResponse(
+#                 {"error": "optimizer returned non-JSON", "status": r.status_code, "raw": r.text},
+#                 status_code=502,
+#             )
+
+#         # annotate for visibility
+#         data["_used_walk_limit_m"] = max_walk_m
+
+#         # 3) best-effort behavior log (don’t fail compose if this errors)
+#         try:
+#             await client.post(
+#                 f"{PROFILE_URL}/profile/{user_id}/behavior",
+#                 json={
+#                     "mode_chosen": "bus",
+#                     "travel_time": data.get("duration_min", 0),
+#                     "travel_cost": 0,
+#                 },
+#             )
+#         except Exception:
+#             pass
+
+#         return JSONResponse(data, status_code=r.status_code)
+
+
+
 @app.post("/api/plan/compose")
 async def plan_compose(req: Request):
     body = await req.json()
     user_id = body.get("user_id") or SEED_USER
 
+    # default prefs if personalizer fails
+    max_walk_m = 800
+
     async with httpx.AsyncClient(timeout=30) as client:
-        # 1) fetch prefs (from personalizer)
-        p = await client.get(f"{PROFILE_URL}/profile/{user_id}/preferences")
-        if p.status_code != 200:
-            # pass through whatever came back so callers can see it
-            try:
-                detail = p.json()
-            except ValueError:
-                detail = p.text
-            return JSONResponse(
-                {"error": "prefs fetch failed", "status": p.status_code, "detail": detail},
-                status_code=502,
-            )
-
+        # 1) try to fetch prefs
         try:
-            prefs = p.json()
-        except ValueError:
-            return JSONResponse(
-                {"error": "prefs were not JSON", "raw": p.text},
-                status_code=502,
-            )
+            p = await client.get(f"{PROFILE_URL}/profile/{user_id}/preferences")
+            if p.status_code == 200:
+                prefs = p.json()
+                try:
+                    max_walk_m = int(prefs.get("walk_limit_m", max_walk_m))
+                except Exception:
+                    pass
+            else:
+                # log only; don't fail compose
+                print("[compose] prefs fetch non-200:", p.status_code, p.text[:200])
+        except Exception as e:
+            print("[compose] prefs fetch error:", e)
 
-        # walk limit from prefs (default 800)
-        try:
-            max_walk_m = int(prefs.get("walk_limit_m", 800))
-        except Exception:
-            max_walk_m = 800  # be safe if someone stored a weird value
-
-        # 2) plan with optimizer
+        # 2) plan with optimizer (always proceed)
         payload = dict(body)
         payload["max_walk_m"] = max_walk_m
 
-        r = await client.post(f"{OPT_URL}/plan", json=payload)
+        r = await client.post(f"{OPT_URL}/plan", json=payload, timeout=60)
 
-        # if optimizer returns non-JSON (e.g., an error page), report it clearly
+        # 3) parse optimizer JSON or return clear error
         try:
             data = r.json()
         except ValueError:
@@ -144,10 +203,9 @@ async def plan_compose(req: Request):
                 status_code=502,
             )
 
-        # annotate for visibility
         data["_used_walk_limit_m"] = max_walk_m
 
-        # 3) best-effort behavior log (don’t fail compose if this errors)
+        # 4) best-effort behavior log (okay to fail)
         try:
             await client.post(
                 f"{PROFILE_URL}/profile/{user_id}/behavior",
@@ -156,6 +214,7 @@ async def plan_compose(req: Request):
                     "travel_time": data.get("duration_min", 0),
                     "travel_cost": 0,
                 },
+                timeout=10,
             )
         except Exception:
             pass
@@ -257,3 +316,38 @@ async def reload_all():
             "transfers": b.json() if b.headers.get("content-type","").startswith("application/json") else b.text,
             "optimizer": c.json() if c.headers.get("content-type","").startswith("application/json") else c.text,
         }
+
+
+@app.get("/api/stops")
+async def api_stops():
+    async with httpx.AsyncClient(timeout=20) as client:
+        # optimizer exposes /stops (id, name, lat, lon)
+        r = await client.get(f"{OPT_URL}/stops")
+        return JSONResponse(r.json(), status_code=r.status_code)
+
+
+# --- Realtime passthrough (driver beacons + SSE stream) ---
+# --- Realtime proxies (phone/browser -> gateway -> data-aggregator) ---
+
+@app.post("/api/realtime/beacon")
+async def realtime_beacon(req: Request):
+    """Forward phone GPS to the data-aggregator realtime endpoint."""
+    body = await req.json()
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(f"{AGG_URL}/realtime/driver/beacon", json=body)
+        # pass-through JSON + status
+        return JSONResponse(r.json(), status_code=r.status_code)
+
+@app.get("/api/realtime/stream")
+async def realtime_stream():
+    """
+    Proxy the SSE stream so the web app can subscribe from the same origin.
+    """
+    async def event_generator():
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream("GET", f"{AGG_URL}/realtime/stream") as r:
+                async for chunk in r.aiter_bytes():
+                    # Just pipe the bytes through (SSE is text, but bytes is fine)
+                    yield chunk
+    from starlette.responses import StreamingResponse
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

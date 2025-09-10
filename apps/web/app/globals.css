@@ -1,7 +1,8 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import "leaflet/dist/leaflet.css";
+/* @import "leaflet/dist/leaflet.css";
+@import "leaflet-routing-machine/dist/leaflet-routing-machine.css"; */
 @import "leaflet-routing-machine/dist/leaflet-routing-machine.css";
 
 
@@ -9,3 +10,117 @@ html, body {
   margin: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
+
+
+
+/* ── Fancy background helpers ─────────────────────────────── */
+.bg-hero {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(56, 189, 248, .18), transparent 60%),
+    radial-gradient(900px 500px at 90% 10%, rgba(244, 114, 182, .18), transparent 55%),
+    radial-gradient(700px 400px at 50% 110%, rgba(190, 242, 100, .12), transparent 55%),
+    linear-gradient(180deg, #0b1020 0%, #0e1326 60%, #0a0f20 100%);
+  z-index: -2;
+}
+
+/* soft grid overlay */
+.bg-grid {
+  position: fixed;
+  inset: -2px;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+  z-index: -1;
+}
+
+/* glass card utility */
+.glass {
+  @apply backdrop-blur-xl bg-white/10 border border-white/10 shadow-xl;
+}
+
+/* pill badge */
+.badge {
+  @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;
+}
+.badge-soft {
+  @apply bg-white/10 text-white/80 border border-white/10;
+}
+
+/* subtle divider */
+.hr-soft {
+  @apply border-t border-white/10;
+}
+
+
+/* ── Fancy background helpers ─────────────────────────────── */
+.bg-hero {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(56, 189, 248, .18), transparent 60%),
+    radial-gradient(900px 500px at 90% 10%, rgba(244, 114, 182, .18), transparent 55%),
+    radial-gradient(700px 400px at 50% 110%, rgba(190, 242, 100, .12), transparent 55%),
+    linear-gradient(180deg, #0b1020 0%, #0e1326 60%, #0a0f20 100%);
+  z-index: -2;
+  animation: gradientShift 20s ease-in-out infinite alternate;
+}
+
+/* animated hue rotation */
+@keyframes gradientShift {
+  0%   { filter: hue-rotate(0deg); }
+  50%  { filter: hue-rotate(30deg); }
+  100% { filter: hue-rotate(-30deg); }
+}
+
+/* soft grid overlay */
+.bg-grid {
+  position: fixed;
+  inset: -2px;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+  z-index: -1;
+}
+
+/* glass card utility */
+.glass {
+  @apply backdrop-blur-xl bg-white/10 border border-white/10 shadow-xl;
+}
+
+/* pill badge */
+.badge {
+  @apply inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium;
+}
+.badge-soft {
+  @apply bg-white/10 text-white/80 border border-white/10;
+}
+
+/* subtle divider */
+.hr-soft {
+  @apply border-t border-white/10;
+}
+
+/* glass & badges (used elsewhere too) */
+.glass {
+  backdrop-filter: blur(10px);
+  background: linear-gradient(180deg, rgba(20, 23, 52, 0.573), rgba(255,255,255,.55));
+  border: 1px solid rgba(255,255,255,.5);
+  box-shadow: 0 10px 30px rgba(16,185,129,.15);
+}
+.badge {
+  display: inline-flex; align-items: center; gap:.35rem;
+  padding: .35rem .65rem; border-radius: 999px; font-weight: 600;
+}
+.badge-soft {
+  background: rgba(186, 186, 186, 0.75);
+  border: 1px solid rgba(255,255,255,.5);
+}
+/* .drop-shadow {
+  filter: drop-shadow(0 6px 16px rgba(16, 185, 129, 0.25));
+} */

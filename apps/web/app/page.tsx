@@ -7,6 +7,8 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { MotionPathPlugin } from "gsap/MotionPathPlugin";
 import { Flip } from "gsap/Flip";
 import { useRouter } from "next/navigation";
+import LocalKnowledgeWidget from "@/components/LocalKnowledgeWidget";
+
 // Register GSAP plugins (browser only)
 if (typeof window !== "undefined") {
   gsap.registerPlugin(ScrollTrigger, MotionPathPlugin, Flip);
@@ -807,7 +809,18 @@ const router = useRouter();
               <span className="opacity-40">•</span>
               <span>Ride-hail</span>
             </div>
+
+             
+          <div className="mt-6">
+  <LocalKnowledgeWidget
+    centerLat={7.05}     // you can bind these to user/location later
+    centerLon={80.0}
+    radiusKm={8}
+  />
+</div>
           </div>
+
+
 
           {/* Map card + stats */}
           <div className="relative">
