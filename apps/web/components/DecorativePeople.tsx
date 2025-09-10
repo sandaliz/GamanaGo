@@ -5,74 +5,79 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 
 /**
- * Decorative people around the map with subtle movement.
- * - Pointer-events: none so the map stays fully usable.
- * - Animations: floating/bouncing to make them visible.
+ * Decorative people positioned OUTSIDE the map card so they’re clearly visible.
+ * - Requires parent wrapper to be `relative` (done in the page).
+ * - Uses negative offsets and overflow-visible to avoid covering the map.
+ * - pointer-events-none so the map remains fully interactive.
  */
 export default function DecorativePeople() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-0 overflow-visible"
+      className="pointer-events-none absolute -inset-16 md:-inset-20 lg:-inset-24 overflow-visible z-20"
     >
-      {/* Top center */}
+      {/* Top-left */}
       <motion.div
-        className="absolute -top-10 left-1/2 -translate-x-1/2 hidden md:block"
+        className="absolute -top-6 -left-4 sm:-top-10 sm:-left-10"
+        initial={{ rotate: -2 }}
         animate={{ y: [0, -8, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-      >
-        <Image
-          src="/illustrations/person-top.png"
-          alt=""
-          width={180}
-          height={130}
-          className="drop-shadow"
-          priority
-        />
-      </motion.div>
-
-      {/* Left side */}
-      <motion.div
-        className="absolute top-1/3 -left-10 hidden sm:block"
-        animate={{ x: [0, -6, 0] }}
         transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
       >
         <Image
           src="/illustrations/person-left.png"
           alt=""
-          width={140}
-          height={140}
-          className="drop-shadow"
+          width={150}
+          height={150}
+          className="drop-shadow-[0_6px_30px_rgba(0,0,0,0.35)]"
+          priority
         />
       </motion.div>
 
-      {/* Right side */}
+      {/* Top-right */}
       <motion.div
-        className="absolute bottom-14 -right-10 hidden md:block"
-        animate={{ x: [0, 8, 0] }}
-        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute -top-8 right-0 sm:-top-12 sm:-right-8"
+        initial={{ rotate: 3 }}
+        animate={{ y: [0, -10, 0] }}
+        transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut", delay: 0.2 }}
       >
         <Image
-          src="/illustrations/person-right.png"
+          src="/illustrations/person-top.png"
           alt=""
-          width={160}
-          height={160}
-          className="drop-shadow"
+          width={190}
+          height={140}
+          className="drop-shadow-[0_6px_30px_rgba(0,0,0,0.35)]"
         />
       </motion.div>
 
-      {/* Bottom center */}
+      {/* Bottom-left */}
       <motion.div
-        className="absolute -bottom-10 left-1/2 -translate-x-1/2 hidden sm:block"
-        animate={{ y: [0, 6, 0] }}
-        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute -bottom-10 -left-2 sm:-bottom-12 sm:-left-8"
+        initial={{ rotate: -1 }}
+        animate={{ x: [0, -8, 0] }}
+        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut", delay: 0.1 }}
       >
         <Image
           src="/illustrations/person-bottom.png"
           alt=""
-          width={130}
-          height={100}
-          className="opacity-90"
+          width={150}
+          height={115}
+          className="opacity-95 drop-shadow-[0_6px_30px_rgba(0,0,0,0.35)]"
+        />
+      </motion.div>
+
+      {/* Bottom-right */}
+      <motion.div
+        className="absolute -bottom-8 -right-6 sm:-bottom-12 sm:-right-10"
+        initial={{ rotate: 1 }}
+        animate={{ x: [0, 10, 0] }}
+        transition={{ duration: 6.5, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <Image
+          src="/illustrations/person-right.png"
+          alt=""
+          width={180}
+          height={180}
+          className="drop-shadow-[0_6px_30px_rgba(0,0,0,0.35)]"
         />
       </motion.div>
     </div>

@@ -268,7 +268,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   // stop_id input states (quick demo defaults)
-const router = useRouter();
+  const router = useRouter();
   // planning
 
   useEffect(() => {
@@ -495,46 +495,7 @@ const router = useRouter();
     }, root);
     return () => ctx.revert();
   }, []);
-  // async function doPlan() {
-  //   try {
-  //     setPlan(true);
-  //     setError(null);
-  //     setPlan(null);
 
-  //     const departAt = new Date(Date.now() + eta * 60_000)
-  //       .toTimeString()
-  //       .slice(0, 5);
-
-  //     const res = await fetch("/api/plan", {
-  //       method: "POST",
-  //       headers: { "content-type": "application/json" },
-  //       body: JSON.stringify({
-  //         origin: { stop_id: fromId.trim() },
-  //         destination: { stop_id: toId.trim() },
-  //         depart_at: departAt,
-  //       }),
-  //     });
-
-  //     const text = await res.text();
-  //     let data: any = null;
-  //     try {
-  //       data = text ? JSON.parse(text) : null;
-  //     } catch {
-  //       /* keep text */
-  //     }
-
-  //     if (!res.ok || !data?.found) {
-  //       throw new Error(
-  //         data?.error || text || `Planner failed (HTTP ${res.status})`
-  //       );
-  //     }
-  //     setPlan(data);
-  //   } catch (e: any) {
-  //     setErr(e?.message || "Planning failed");
-  //   } finally {
-  //     setPlanning(false);
-  //   }
-  // }
   async function planTrip(departAt: string) {
     setLoading(true);
     setError(null);
@@ -572,10 +533,14 @@ const router = useRouter();
     }
   }
 
- function handlePlanClick() {
-  // send the user to the dedicated results page
-  router.push(`/directions?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}&depart_in=${eta}`);
-}
+  function handlePlanClick() {
+    // send the user to the dedicated results page
+    router.push(
+      `/directions?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(
+        toId
+      )}&depart_in=${eta}`
+    );
+  }
 
   function handleDepartNow() {
     planTrip(toHHMM(new Date()));
@@ -590,68 +555,82 @@ const router = useRouter();
   }
 
   return (
-    <div ref={root} className="min-h-screen bg-black text-white">
-      {/* spotlight */}
-      <div className="spotlight pointer-events-none fixed left-1/2 top-1/2 -z-10 h-[80vmax] w-[80vmax] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.12),transparent_60%)]" />
-
-      {/* grid */}
+    <div
+      ref={root}
+      className="min-h-screen bg-black text-white antialiased selection:bg-cyan-400/20"
+    >
+      {/* ── Ambient layers ─────────────────────────────────────────── */}
+      <div className="pointer-events-none fixed inset-0 -z-30 [background:radial-gradient(60%_40%_at_70%_0%,rgba(34,211,238,.15),transparent_60%),radial-gradient(50%_50%_at_10%_10%,rgba(250,204,21,.08),transparent_60%)]" />
       <div
-        className="pointer-events-none fixed inset-0 -z-20 opacity-[0.08]"
+        className="pointer-events-none fixed inset-0 -z-20 opacity-[0.06] mix-blend-screen"
         style={{
-          backgroundImage: "radial-gradient(#6ee7b7 1px, transparent 1px)",
-          backgroundSize: "22px 22px",
+          backgroundImage: "radial-gradient(#6ee7b7_1px,transparent_1px)",
+          backgroundSize: "22px_22px",
         }}
       />
+      <div className="spotlight pointer-events-none fixed left-1/2 top-1/2 -z-10 h-[80vmax] w-[80vmax] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.12),transparent_60%)]" />
 
-      {/* navbar */}
-      <header className="sticky top-0 z-30 backdrop-blur supports-[backdrop-filter]:bg-black/30">
+      {/* ── Navbar ─────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-30 backdrop-blur supports-[backdrop-filter]:bg-black/40 border-b border-white/10">
         <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-xl bg-cyan-400/20 ring-1 ring-cyan-300/30 grid place-items-center">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-cyan-400/30 to-cyan-400/5 ring-1 ring-cyan-300/30 grid place-items-center shadow-[0_0_40px_-10px_rgba(34,211,238,.6)]">
               <IconTrain />
             </div>
-            <span className="font-semibold tracking-tight">SLAIC Transit</span>
+            <span className="font-semibold tracking-tight text-white/90">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-emerald-300">
+                SLAIC
+              </span>{" "}
+              Transit
+            </span>
           </div>
           <div className="hidden md:flex items-center gap-6 text-sm text-white/70">
-            <a href="/personalize" className="hover:text-white">
+            <a href="/personalize" className="hover:text-white transition">
               Agents
             </a>
-            <a href="#features" className="hover:text-white">
+            <a href="#features" className="hover:text-white transition">
               Features
             </a>
-            <a href="#demo" className="hover:text-white">
+            <a href="#demo" className="hover:text-white transition">
               Demo
             </a>
-            <Magnetic className="ml-2 rounded-xl px-4 py-2 bg-white/10 hover:bg-white/20 transition">
+            <Magnetic className="btn-brand-outline gradient-border">
               Sign in
             </Magnetic>
           </div>
         </nav>
       </header>
 
-      {/* hero */}
+      {/* ── Hero ───────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-16 pb-12 lg:pt-24 lg:pb-20 grid lg:grid-cols-2 gap-10 items-center">
           <div>
-            <div className="hero-badge inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80">
+            <div className="hero-badge inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80 shadow-[0_0_40px_-12px_rgba(34,211,238,.6)]">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
               Real-time • Multimodal • Sri Lanka
             </div>
-            <h1 className="hero-title mt-4 text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight">
-              Your AI-Driven{" "}
-              <span style={{ color: "#FCC61D" }}>Smart Transit</span> Companion
+            <h1 className="hero-title mt-4 text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight leading-[1.05]">
+              Your AI‑Driven{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-300 to-cyan-300">
+                Smart
+              </span>{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-300 to-cyan-300">
+                {" "}
+                Transit
+              </span>{" "}
+              Companion
             </h1>
             <p className="hero-sub mt-4 text-white/70 text-base sm:text-lg max-w-prose">
-              Plan buses, trains, and tuk-tuks in one tap. Live disruptions,
+              Plan buses, trains, and tuk‑tuks in one tap. Live disruptions,
               fare optimization, and Sinhala/English/Tamil voice.
             </p>
 
             {/* Planner Card */}
-            <div className="hero-cta hero-card mt-8 rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur will-change-transform">
+            <div className="hero-cta hero-card mt-8 rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02))] p-5 sm:p-6 backdrop-blur will-change-transform shadow-[0_10px_60px_-20px_rgba(34,211,238,.35)]">
               <div className="grid sm:grid-cols-2 gap-3">
                 <label className="group">
                   <span className="text-xs text-white/60">From (stop_id)</span>
-                  <div className="mt-1 flex items-center gap-2 rounded-xl border border-white/10 bg-black/40 px-3 py-2 focus-within:border-cyan-400/40">
+                  <div className="mt-1 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-3 py-2 focus-within:border-cyan-400/40 shadow-[inset_0_0_0_1px_rgba(255,255,255,.04)]">
                     <IconBus />
                     <input
                       value={fromId}
@@ -663,7 +642,9 @@ const router = useRouter();
                 </label>
                 <label className="group">
                   <span className="text-xs text-white/60">To (stop_id)</span>
-                  <div className="mt-1 flex items-center gap-2 rounded-xl border border-white/10 bg-black/40 px-3 py-2 focus-within:border-cyan-400/40">
+                  <div className="mt-1 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-3 py-2 focus-within:border-cyan-400/40 shadow-[inset_0_0_0_1px_rgba(255,255,255,.04)]">
+                  
+                  <div className="mt-1 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-3 py-2 focus-ring-brand">
                     <IconTrain />
                     <input
                       value={toId}
@@ -671,6 +652,7 @@ const router = useRouter();
                       placeholder="S09"
                       className="bg-transparent outline-none w-full placeholder:text-white/40"
                     />
+                  </div>
                   </div>
                 </label>
               </div>
@@ -688,10 +670,10 @@ const router = useRouter();
                     max={120}
                     value={eta}
                     onChange={(e) => setEta(parseInt(e.target.value))}
-                    className="mt-1 w-full accent-cyan-400"
+                    className="mt-1 w-full range-brand"
                   />
                 </div>
-                <div className="text-center rounded-xl border border-white/10 bg-black/40 py-2">
+                <div className="text-center rounded-2xl border border-white/10 bg-black/40 py-2 shadow-[inset_0_0_0_1px_rgba(255,255,255,.04)]">
                   <div className="text-[10px] uppercase tracking-wide text-white/60">
                     Est. ETA
                   </div>
@@ -703,7 +685,7 @@ const router = useRouter();
 
               <div className="mt-3 flex flex-col sm:flex-row gap-3">
                 <Magnetic
-                  className="btn-plan rounded-xl px-4 py-2 bg-cyan-400 text-black font-medium hover:bg-cyan-300 transition"
+                  className="btn-brand brand-grad brand-shine soft-shadow"
                   onClick={handlePlanClick}
                   disabled={loading}
                 >
@@ -713,17 +695,17 @@ const router = useRouter();
                 <button
                   onClick={handleDepartNow}
                   disabled={loading}
-                  className="rounded-xl px-4 py-2 border border-white/15 hover:bg-white/10 transition disabled:opacity-60"
+                  className="rounded-2xl px-4 py-2 border border-white/15 hover:bg-white/10 transition disabled:opacity-60"
                 >
                   Depart Now
                 </button>
                 <button
                   onClick={() => setVoiceActive((v) => !v)}
-                  className="btn-voice rounded-xl px-4 py-2 border border-white/15 hover:bg-white/10 transition relative overflow-visible"
+                  className="btn-voice rounded-2xl px-4 py-2 border border-white/15 hover:bg-white/10 transition relative overflow-visible"
                 >
                   <span
                     className={cx(
-                      "mic-pulse absolute inset-0 rounded-xl -z-10",
+                      "mic-pulse absolute inset-0 rounded-2xl -z-10",
                       voiceActive && "ring-2 ring-cyan-400/40"
                     )}
                   />
@@ -738,11 +720,6 @@ const router = useRouter();
 
               {plan && (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-                  {/* <div className="text-sm font-medium">
-                    {plan.depart_at} → {plan.arrive_at} • {plan.duration_min}{" "}
-                    mins • {plan.transfers} transfers • walk ≤{" "}
-                    {(plan as any)._used_walk_limit_m ?? plan.max_walk_m} m
-                  </div> */}
                   <div className="text-xs text-white/70 mb-1">
                     {nameOrId(plan.origin_name, plan.origin_stop)} →{" "}
                     {nameOrId(plan.dest_name, plan.dest_stop)}
@@ -800,36 +777,34 @@ const router = useRouter();
             </div>
 
             {/* Modes ticker */}
-            <div className="mt-6 flex items-center gap-3 text-white/60 text-sm">
+            <div className="mt-6 flex flex-wrap items-center gap-3 text-white/60 text-sm">
               <IconTrain /> <span>Trains</span>
               <span className="opacity-40">•</span>
               <IconBus /> <span>Buses</span>
               <span className="opacity-40">•</span>
-              <IconTuk /> <span>Tuk-tuks</span>
+              <IconTuk /> <span>Tuk‑tuks</span>
               <span className="opacity-40">•</span>
-              <span>Ride-hail</span>
+              <span>Ride‑hail</span>
             </div>
 
-             
-          <div className="mt-6">
-  <LocalKnowledgeWidget
-    centerLat={7.05}     // you can bind these to user/location later
-    centerLon={80.0}
-    radiusKm={8}
-  />
-</div>
+            <div className="mt-6">
+              <LocalKnowledgeWidget
+                centerLat={7.05}
+                centerLon={80.0}
+                radiusKm={8}
+              />
+            </div>
           </div>
-
-
 
           {/* Map card + stats */}
           <div className="relative">
             <div className="absolute -inset-6 rounded-[2rem] bg-cyan-400/10 blur-3xl" />
-            <div className="map-card relative aspect-[3/4] rounded-[2rem] border border-white/10 bg-gradient-to-b from-white/5 to-white/[0.02] p-4 will-change-transform">
+            <div className="map-card relative aspect-[3/4] rounded-[2rem] border border-white/10 bg-gradient-to-b from-white/5 to-white/[0.02] p-4 will-change-transform shadow-[0_30px_80px_-30px_rgba(34,211,238,.35)]">
+              <div className="absolute inset-x-10 top-2 h-6 rounded-full bg-white/10 blur-2xl opacity-30" />
               <SriLankaMap />
             </div>
             <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-              <div className="rounded-xl border border-white/10 bg-white/5 py-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 py-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,.04)]">
                 <div className="text-xs text-white/60">Delay Alerts</div>
                 <div className="mt-1 text-xl font-semibold">
                   <span data-stat={1500} data-suffix="+">
@@ -837,13 +812,13 @@ const router = useRouter();
                   </span>
                 </div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 py-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 py-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,.04)]">
                 <div className="text-xs text-white/60">Daily Queries</div>
                 <div className="mt-1 text-xl font-semibold">
                   <span data-stat={32000}>0</span>
                 </div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 py-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 py-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,.04)]">
                 <div className="text-xs text-white/60">Coverage</div>
                 <div className="mt-1 text-xl font-semibold">Nationwide</div>
               </div>
@@ -858,7 +833,8 @@ const router = useRouter();
           <h2 className="reveal text-2xl sm:text-3xl font-semibold">
             Agentic AI, orchestrated.
           </h2>
-          <p className="reveal mt-2 text-white/70 max-w-2xl">
+          <div className="mt-2 h-0.5 w-28 rounded-full brand-grad" />
+          <p className="reveal mt-3 text-white/70 max-w-2xl">
             Agents collaborate live to deliver the best trip—data, routes,
             disruptions, fares, language.
           </p>
@@ -897,14 +873,14 @@ const router = useRouter();
             ].map((a, i) => (
               <div
                 key={i}
-                className="agent-card reveal group rounded-2xl border border-white/10 bg-white/[0.04] p-4 hover:bg-white/[0.06] transition"
+                className="agent-card reveal group rounded-2xl border border-white/10 bg-white/[0.04] p-4 hover:bg-white/[0.06] transition gradient-border soft-shadow"
               >
-                <div className="flex items-center gap-2 text-cyan-300">
+                <div className="flex items-center gap-2">
                   {a.icon}
-                  <span className="font-medium">{a.title}</span>
+                  <span className="h-18 w-18 rounded-xl brand-grad grid place-items-center text-black">{a.title}</span>
                 </div>
                 <p className="mt-1 text-white/70 text-sm">{a.desc}</p>
-                <div className="mt-3 h-1 w-0 bg-cyan-400 transition-all duration-500 group-hover:w-full" />
+                <div className="mt-3 h-1 w-0 rounded-full brand-grad transition-all duration-500 group-hover:w-full" />
               </div>
             ))}
           </div>
@@ -919,14 +895,11 @@ const router = useRouter();
               <div className="lg:col-span-2 order-2 lg:order-1">
                 <h3 className="text-2xl font-semibold">Sample Itineraries</h3>
                 <div className="mt-3 flex gap-2 text-xs">
-                  <button
-                    className="sort-btn rounded-full border border-white/15 px-3 py-1 hover:bg-white/10"
-                    data-by="time"
-                  >
+                  <button className="sort-btn rounded-full border border-white/15 px-3 py-1 hover:bg-white/10">
                     Sort by Time
                   </button>
                   <button
-                    className="sort-btn rounded-full border border-white/15 px-3 py-1 hover:bg-white/10"
+                    className="sort-btn rounded-full border border-white/15 px-3 py-1 hover:bg:white/10 hover:bg-white/10"
                     data-by="cost"
                   >
                     Sort by Cost
@@ -1005,14 +978,13 @@ const router = useRouter();
       <section id="demo" className="py-12 lg:py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
           <h3 className="reveal text-3xl font-semibold">
-            Ready to wow SLAIC judges?
+            Experience SLAIC Transit in Action
           </h3>
           <p className="reveal mt-2 text-white/70">
-            Plug your agents into this front-end and demo real, live planning in
-            minutes.
+            Try our live demo or personalize your experience with custom agents.
           </p>
           <div className="reveal mt-6 flex flex-wrap items-center justify-center gap-3">
-            <Magnetic className="rounded-xl px-5 py-2.5 bg-cyan-400 text-black font-medium hover:bg-cyan-300 transition">
+            <Magnetic className="rounded-xl px-5 py-2.5 bg-cyan-400 text-black font-medium hover:bg-cyan-300 transition shadow-[0_10px_30px_-10px_rgba(34,211,238,.6)]">
               Launch Demo
             </Magnetic>
             <a

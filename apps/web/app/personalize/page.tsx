@@ -86,7 +86,7 @@ function PrefSlider({
         max={100}
         value={value}
         onChange={(e) => onChange(parseInt(e.currentTarget.value, 10))}
-        className="w-full accent-yellow-400"
+        className="w-full accent-amber-300 focus:outline-none"
       />
     </div>
   );
@@ -126,7 +126,7 @@ function Toast({
   );
 }
 
-/* ---------------- Scenario buttons ---------------- */
+/* ---------------- Scenario buttons (no gradient fills) ---------------- */
 function ScenarioButton({
   active,
   label,
@@ -141,8 +141,8 @@ function ScenarioButton({
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${
-        active ? "bg-yellow-400 text-black" : "bg-white/5 text-white/85"
+      className={`px-3 py-2 rounded-xl text-xs font-semibold border transition focus:outline-none focus:ring-2 focus:ring-amber-300/60 ${
+        active ? "bg-yellow-400 text-black" : "bg-white/5 text-white/85 hover:bg-white/10"
       }`}
       style={{
         borderColor: active ? `${YELLOW}cc` : "rgba(255,255,255,0.18)",
@@ -218,33 +218,33 @@ export default function PersonalizeDashboard() {
   }, []);
 
   /* ---------- Load preferences & suggestions ---------- */
-useEffect(() => {
-  (async () => {
-    try {
-      const [pRes, sRes] = await Promise.all([
-        fetch("/api/preferences", { cache: "no-store" }),
-        fetch("/api/suggestions", { cache: "no-store" }),
-      ]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const [pRes, sRes] = await Promise.all([
+          fetch("/api/preferences", { cache: "no-store" }),
+          fetch("/api/suggestions", { cache: "no-store" }),
+        ]);
 
-      // preferences
-      const pText = await pRes.text();
-      let p: any = null;
-      try { p = pText ? JSON.parse(pText) : null; } catch {}
-      if (p && p.weights) setPrefs(p);
+        // preferences
+        const pText = await pRes.text();
+        let p: any = null;
+        try { p = pText ? JSON.parse(pText) : null; } catch {}
+        if (p && p.weights) setPrefs(p);
 
-      // suggestions
-      const sText = await sRes.text();
-      let s: any = [];
-      try { s = sText ? JSON.parse(sText) : []; } catch {}
-      setSuggestions(Array.isArray(s) ? s : []);
-    } catch (e) {
-      console.error(e);
-      setSuggestions([]); // safe fallback
-    } finally {
-      setLoading(false);
-    }
-  })();
-}, []);
+        // suggestions
+        const sText = await sRes.text();
+        let s: any = [];
+        try { s = sText ? JSON.parse(sText) : []; } catch {}
+        setSuggestions(Array.isArray(s) ? s : []);
+      } catch (e) {
+        console.error(e);
+        setSuggestions([]); // safe fallback
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   /* ---------- Live transport updates ---------- */
   useEffect(() => {
@@ -275,7 +275,6 @@ useEffect(() => {
 
   /* ---------- Scenario effects (local + backend context) ---------- */
   useEffect(() => {
-    // local visual nudges
     setPrefs((prev) => {
       const next = { ...prev };
       const w = { ...next.weights };
@@ -291,7 +290,6 @@ useEffect(() => {
       return next;
     });
 
-    // inform backend Context service (so planner adapts)
     (async () => {
       try {
         await fetch("/api/context", {
@@ -310,7 +308,6 @@ useEffect(() => {
 
   /* ---------- Apply suggestion ---------- */
   async function applySuggestion(row: SuggestionRow) {
-    // optimistic local update
     if (row.payload?.weights) {
       setPrefs((old) => {
         const next = { ...old, weights: { ...old.weights } };
@@ -341,7 +338,6 @@ useEffect(() => {
     setToastOpen(true);
     speak(prefs.voice_assist, msg);
 
-    // persist to server
     try {
       await fetch(`/api/suggestions`, {
         method: "POST",
@@ -381,12 +377,16 @@ useEffect(() => {
 
       <main className="pl-[88px] pr-6 md:pr-10 py-8">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <h1 className="reveal text-2xl md:text-3xl font-semibold">Personalization</h1>
+          <h1 className="reveal text-2xl md:text-3xl font-extrabold tracking-tight">
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-300 via-yellow-300 to-cyan-300">
+              Personalization
+            </span>
+          </h1>
 
           {/* Language + Voice + Scenarios */}
           <div className="reveal flex flex-wrap items-center gap-2">
             <select
-              className="rounded-md bg-white/10 border border-white/20 px-2 py-1 text-white"
+              className="rounded-md bg-white/10 border border-white/20 px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-amber-300/60"
               value={prefs.language}
               onChange={(e) => setPrefs((p) => ({ ...p, language: e.target.value as Prefs["language"] }))}
               title="Language"
@@ -397,7 +397,7 @@ useEffect(() => {
             </select>
 
             <button
-              className={`text-xs px-3 py-2 rounded-lg border ${
+              className={`text-xs px-3 py-2 rounded-lg border transition focus:outline-none focus:ring-2 focus:ring-amber-300/60 ${
                 prefs.voice_assist ? "bg-yellow-400 text-black" : "bg-white/5 text-white/85"
               }`}
               style={{ borderColor: prefs.voice_assist ? `${YELLOW}cc` : "rgba(255,255,255,0.18)" }}
@@ -591,7 +591,7 @@ function SuggestionsCard({
               ) : (
                 <button
                   onClick={() => applySuggestion(s)}
-                  className="rounded-lg text-[11px] px-2.5 py-1.5 bg-yellow-400 text-black font-semibold hover:bg-yellow-300 transition"
+                  className="rounded-lg text-[11px] px-2.5 py-1.5 bg-yellow-400 text-black font-semibold hover:bg-yellow-300 transition focus:outline-none focus:ring-2 focus:ring-amber-300/60"
                 >
                   Apply
                 </button>
@@ -625,7 +625,12 @@ function Stat({ label, unit, count }: { label: string; unit?: string; count: num
     <div className="rounded-2xl p-4 bg-black/40 border border-white/10">
       <div className="text-xs text-white/70">{label}</div>
       <div className="mt-1 text-2xl font-semibold flex items-baseline gap-1">
-        <span data-count={count}>0</span>
+        <span
+          data-count={count}
+          className="bg-clip-text text-transparent bg-gradient-to-r from-amber-300 via-yellow-300 to-cyan-300"
+        >
+          0
+        </span>
         {unit && <span className="text-sm text-white/70">{unit}</span>}
       </div>
     </div>

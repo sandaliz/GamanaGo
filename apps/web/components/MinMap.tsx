@@ -1,9 +1,8 @@
-// components/MiniMap.tsx
 "use client";
 
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
-import DecorativePeopleOutside  from "../components/DecorativePeopleOutside"
+
 // Lazy-load Leaflet (avoids SSR issues)
 let Lmod: typeof import("leaflet") | null = null;
 async function getLeaflet() {
@@ -31,8 +30,7 @@ export type Plan = {
   dest_name: string;
 };
 
-const OSRM =
-  process.env.NEXT_PUBLIC_OSRM_URL || "https://router.project-osrm.org";
+const OSRM = process.env.NEXT_PUBLIC_OSRM_URL || "https://router.project-osrm.org";
 const PROFILE_FOR_RIDE = "driving"; // simple default for all legs
 
 type Props = {
@@ -44,12 +42,7 @@ type Props = {
   streamBase?: string; // e.g. http://localhost:8001
 };
 
-export default function MiniMap({
-  plan,
-  height = 320,
-  liveTripId,
-  streamBase,
-}: Props) {
+export default function MiniMap({ plan, height = 320, liveTripId, streamBase }: Props) {
   const mapRef = useRef<any>(null);
   const lineLayerRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
@@ -65,15 +58,11 @@ export default function MiniMap({
 
       // Create map once
       if (!mapRef.current) {
-        mapRef.current = L.map("mini-map", {
-          zoomControl: true,
-          preferCanvas: true,
-        });
+        mapRef.current = L.map("mini-map", { zoomControl: true, preferCanvas: true });
 
         // OSM tiles (free)
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution:
-            '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
           maxZoom: 19,
         }).addTo(mapRef.current);
       }
@@ -87,14 +76,8 @@ export default function MiniMap({
       }
 
       // Mark origin/destination
-      const origin = L.circleMarker(
-        [plan.origin_lat, plan.origin_lon],
-        { radius: 6, weight: 2 }
-      ).addTo(mapRef.current);
-      const dest = L.circleMarker(
-        [plan.dest_lat, plan.dest_lon],
-        { radius: 6, weight: 2 }
-      ).addTo(mapRef.current);
+      const origin = L.circleMarker([plan.origin_lat, plan.origin_lon], { radius: 6, weight: 2 }).addTo(mapRef.current);
+      const dest = L.circleMarker([plan.dest_lat, plan.dest_lon], { radius: 6, weight: 2 }).addTo(mapRef.current);
       origin.bindTooltip(plan.origin_name || "Origin", { permanent: false });
       dest.bindTooltip(plan.dest_name || "Destination", { permanent: false });
       markersRef.current.push(origin, dest);
@@ -114,7 +97,6 @@ export default function MiniMap({
       const geoms = await Promise.all(plan.legs.map((l) => fetchOsrmGeoJSON(l)));
       const Ls = await getLeaflet();
 
-      // if none from OSRM => draw a simple line through leg endpoints
       if (!geoms.some(Boolean)) {
         const latlngs = plan.legs.flatMap((l) => [
           [l.from_lat, l.from_lon],
@@ -125,10 +107,7 @@ export default function MiniMap({
         const layers = geoms
           .filter(Boolean)
           .map((geom) =>
-            Ls.geoJSON(
-              { type: "Feature", properties: {}, geometry: geom as any },
-              { style: { weight: 4 } }
-            )
+            Ls.geoJSON({ type: "Feature", properties: {}, geometry: geom as any }, { style: { weight: 4 } })
           );
         lineLayerRef.current = Ls.layerGroup(layers).addTo(mapRef.current);
       }
@@ -147,7 +126,6 @@ export default function MiniMap({
 
       // ---- Live bus marker (SSE) ----
       if (liveTripId) {
-        // Build a simple bus icon (SVG)
         const busIcon = L.divIcon({
           className: "bus-icon",
           html: `
@@ -159,16 +137,11 @@ export default function MiniMap({
           iconAnchor: [13, 13],
         });
 
-        // Create marker offscreen first
-        liveMarkerRef.current = L.marker([0, 0], { icon: busIcon })
-          .addTo(mapRef.current)
-          .bindTooltip("Live bus", { permanent: false });
+        liveMarkerRef.current = L.marker([0, 0], { icon: busIcon }).addTo(mapRef.current).bindTooltip("Live bus", {
+          permanent: false,
+        });
 
-        // Subscribe to realtime SSE
-        const base =
-          streamBase ||
-          process.env.NEXT_PUBLIC_AGG_URL ||
-          "http://localhost:8001";
+        const base = streamBase || process.env.NEXT_PUBLIC_AGG_URL || "http://localhost:8001";
         const es = new EventSource(`${base}/realtime/stream`);
         sseRef.current = es;
 
@@ -180,10 +153,8 @@ export default function MiniMap({
             const lon = Number(msg.lon);
             if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
-            // Move marker
             liveMarkerRef.current.setLatLng([lat, lon]);
 
-            // Keep the bus in view if it goes outside
             const current = mapRef.current.getBounds();
             if (!current.contains([lat, lon])) {
               mapRef.current.panTo([lat, lon], { animate: true });
@@ -192,7 +163,7 @@ export default function MiniMap({
         };
 
         es.onerror = () => {
-          // You can show a small banner if needed; for now just keep silent
+          // optional: surface a toast
         };
       }
     })();
@@ -207,20 +178,18 @@ export default function MiniMap({
   }, [plan, liveTripId, streamBase]);
 
   return (
-
-
-    
-    <div
-      id="mini-map"
-      style={{
-        width: "100%",
-        height: typeof height === "number" ? `${height}px` : height,
-        borderRadius: 12,
-        overflow: "hidden",
-        border: "1px solid #e5e7eb",
-      }}
-      
-    />
-    
+    <div className="rounded-2xl p-[1px] bg-gradient-to-r from-amber-300 via-yellow-300 to-cyan-300">
+      <div
+        id="mini-map"
+        style={{
+          width: "100%",
+          height: typeof height === "number" ? `${height}px` : height,
+          borderRadius: 12,
+          overflow: "hidden",
+          border: "1px solid rgba(229,231,235,0.22)",
+        }}
+        className="bg-white/5"
+      />
+    </div>
   );
 }
