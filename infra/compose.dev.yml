@@ -89,8 +89,8 @@ services:
   # Use *this* one (drop the old "profile-agent")
   profile-personalizer:
     build: ../apps/agents/profile-personalizer
-    env_file:
-      - ../apps/agents/profile-personalizer/.env
+    #env_file:
+      #- ../apps/agents/profile-personalizer/.env
     environment:
      AGGREGATOR_URL: http://data-aggregator:8001  
     depends_on:
