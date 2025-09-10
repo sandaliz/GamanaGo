@@ -8,14 +8,16 @@ import PlanSummary, { type Plan } from "../../components/PlanSummary";
 const GW = process.env.NEXT_PUBLIC_GATEWAY_URL || "http://localhost:8000";
 
 export default function DirectionsPage() {
-  const [origin, setOrigin] = useState("S06");
-  const [dest, setDest] = useState("S09");
-  const [time, setTime] = useState("07:30");
+  type StopRef = { name: string };
+  const [origin, setOrigin] = useState<StopRef>({
+    name: "",
+  });
+  const [dest, setDest] = useState<StopRef>({ name: "" });
+  const [time, setTime] = useState("");
 
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   async function doPlan() {
     setLoading(true);
     setError(null);
@@ -25,12 +27,16 @@ export default function DirectionsPage() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          origin: { stop_id: origin },
-          destination: { stop_id: dest },
+          origin: { name: origin.name }, // stop_id optional
+          destination: { name: dest.name }, // stop_id optional
           depart_at: time,
         }),
       });
       const data = (await r.json()) as Plan | any;
+      // after const data = await r.json()
+      (data as any).requested_depart_at = time;
+      setPlan(data);
+
       if (!r.ok || !data?.found) {
         setError(
           typeof data === "object" ? JSON.stringify(data) : String(data)
@@ -72,22 +78,24 @@ export default function DirectionsPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
             <div>
               <label className="text-sm font-medium text-white/70">
-                Origin stop_id
+                Origin stop name
               </label>
               <input
                 className="mt-2 w-full rounded-xl bg-white/10 border border-white/10 px-4 py-3 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 ring-sky-400/60 text-lg"
-                value={origin}
-                onChange={(e) => setOrigin(e.target.value)}
+                value={origin.name}
+                placeholder="Origin name (e.g., Kohuwala)"
+                onChange={(e) => setOrigin({ ...origin, name: e.target.value })}
               />
             </div>
             <div>
               <label className="text-sm font-medium text-white/70">
-                Destination stop_id
+                Destination stop name
               </label>
               <input
                 className="mt-2 w-full rounded-xl bg-white/10 border border-white/10 px-4 py-3 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 ring-fuchsia-400/60 text-lg"
-                value={dest}
-                onChange={(e) => setDest(e.target.value)}
+                value={dest.name}
+                placeholder="Dest name (e.g., Kandy)"
+                onChange={(e) => setDest({ ...dest, name: e.target.value })}
               />
             </div>
             <div>
@@ -97,6 +105,7 @@ export default function DirectionsPage() {
               <input
                 className="mt-2 w-full rounded-xl bg-white/10 border border-white/10 px-4 py-3 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 ring-emerald-400/60 text-lg"
                 value={time}
+                placeholder="07:30"
                 onChange={(e) => setTime(e.target.value)}
               />
             </div>

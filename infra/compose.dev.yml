@@ -108,7 +108,9 @@ services:
   fare-optimizer:
     build: ../apps/agents/fare-optimizer
     env_file: ../.env.example
-    depends_on:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://stc:stc@postgres:5432/gamanagodb
+    depends_on: 
       postgres:
         condition: service_healthy
     ports:

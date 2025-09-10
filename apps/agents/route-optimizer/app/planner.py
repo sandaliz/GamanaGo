@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple, Optional
 from sqlalchemy import text
 from .db import ENGINE
 
+_route_meta_by_id = None
 # ---- time helpers -------------------------------------------------
 def hms_to_sec(s: str) -> int:
     parts = s.split(":")
@@ -35,6 +36,34 @@ _snapshot = None
 _stop_names_cache = None
 _stop_info_cache = None  
 # ---- snapshot (prefetch GTFS into RAM) ----------------------------
+
+
+def _load_route_meta():
+    with ENGINE.begin() as c:
+        rows = c.execute(text("""
+            SELECT r.route_id,
+                   r.route_short_name,
+                   r.route_long_name,
+                   r.agency_id,
+                   COALESCE(a.agency_name, r.agency_id) AS agency_name
+            FROM routes r
+            LEFT JOIN agencies a USING (agency_id)
+        """)).mappings().all()
+    meta = {}
+    for r in rows:
+        meta[r["route_id"]] = {
+            "route_short_name": r["route_short_name"],
+            "route_long_name":  r["route_long_name"],
+            "agency_id":        r["agency_id"],
+            "agency_name":      r["agency_name"],
+        }
+    return meta
+
+def route_meta_by_id():
+    global _route_meta_by_id
+    if _route_meta_by_id is None:
+        _route_meta_by_id = _load_route_meta()
+    return _route_meta_by_id
 
 def load_snapshot():
     """
@@ -131,10 +160,11 @@ def load_snapshot_cached():
 #     global _snapshot
 #     _snapshot = load_snapshot()
 def refresh_snapshot():
-    global _snapshot, _stop_info_cache, _stop_names_cache   # <— add globals
+    global _snapshot, _stop_info_cache, _stop_names_cache, _route_meta_by_id
     _snapshot = load_snapshot()
     _stop_info_cache = None
     _stop_names_cache = None
+    _route_meta_by_id = None
 
 
 
@@ -243,11 +273,16 @@ def plan(
         cur_i  = stop_info(cur)
         if mode == "ride":
             route_id = trips_by_id[tid][0].route_id
+            rmeta = route_meta_by_id().get(route_id, {})
             legs.append({
                 "mode": "ride",
                 "trip_id": tid,
                 "route_id": route_id,
                 "route_type": route_type_by_id.get(route_id),
+               "operator": rmeta.get("agency_name"),
+                "agency_id": rmeta.get("agency_id"),
+                "route_short_name": rmeta.get("route_short_name"),
+               "route_long_name": rmeta.get("route_long_name"),
                 "from_stop": prev,
                 "to_stop": cur,
                 "from_stop_name": prev_i["name"],
@@ -290,6 +325,73 @@ def plan(
         "origin_lat": o["lat"], "origin_lon": o["lon"],
         "dest_lat": d["lat"],   "dest_lon": d["lon"],
     }
+# ---- add this back (seconds!) ------------------------------------
+def sec_to_hms(s: int) -> str:
+    s %= 24 * 3600
+    hh = s // 3600
+    mm = (s % 3600) // 60
+    ss = s % 60
+    return f"{hh:02d}:{mm:02d}:{ss:02d}"
+
+
+def available_trips_between(origin_stop: str, dest_stop: str,
+                             depart_hm: str, window_min: int = 15, limit: int = 20):
+    start_s = hms_to_sec(depart_hm)
+    end_s   = start_s + window_min * 60
+
+    # Use HH:MM:SS so string comparisons line up
+    start = sec_to_hms(start_s)
+    end   = sec_to_hms(end_s)
+    wrap = end < start  # crosses midnight
+
+    sql = f"""
+        SELECT 
+            o.trip_id,
+            t.route_id,
+            o.departure_time::text AS depart_time,
+            d.arrival_time::text   AS arrive_time,
+            r.route_short_name,
+            r.route_long_name,
+            COALESCE(a.agency_name, r.agency_id) AS agency_name
+        FROM stop_times o
+        JOIN stop_times d ON d.trip_id = o.trip_id AND d.stop_sequence > o.stop_sequence
+        JOIN trips t      ON t.trip_id = o.trip_id
+        LEFT JOIN routes r  ON r.route_id = t.route_id
+        LEFT JOIN agencies a ON a.agency_id = r.agency_id
+        WHERE o.stop_id = :o_sid
+          AND d.stop_id = :d_sid
+          AND (
+            {"(o.departure_time::text >= :start OR o.departure_time::text < :end)" if wrap else
+              "(o.departure_time::text >= :start AND o.departure_time::text < :end)"}
+          )
+        ORDER BY o.departure_time
+        LIMIT :limit
+    """
+
+    params = {
+        "o_sid": origin_stop,
+        "d_sid": dest_stop,
+        "start": start,  # "HH:MM:SS"
+        "end": end,      # "HH:MM:SS"
+        "limit": limit,
+    }
+
+    with ENGINE.begin() as c:
+        rows = c.execute(text(sql), params).mappings().all()
+
+    # Already strings, safe for JSON
+    return [
+        {
+            "trip_id":          r["trip_id"],
+            "route_id":         r["route_id"],
+            "depart_time":      r["depart_time"],
+            "arrive_time":      r["arrive_time"],
+            "route_short_name": r["route_short_name"],
+            "route_long_name":  r["route_long_name"],
+            "agency_name":      r["agency_name"],
+        }
+        for r in rows
+    ]
 
 
 # --- add near the other module globals ---

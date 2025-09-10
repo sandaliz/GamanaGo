@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy import text
 
 from .db import ENGINE
-from .planner import plan as do_plan, nearest_stops, refresh_snapshot
+from .planner import plan as do_plan, nearest_stops, refresh_snapshot,available_trips_between
 
 app = FastAPI(title="Route Optimizer")
 
@@ -21,6 +21,35 @@ class PlanRequest(BaseModel):
     destination: Place
     depart_at: str = Field(..., description="HH:MM or HH:MM:SS (24h, same-day)")
     max_walk_m: Optional[int] = Field(800, ge=100, le=3000)
+
+
+
+class AvTripsReq(BaseModel):
+    origin: Place
+    destination: Place
+    depart_at: str
+    window_min: Optional[int] = 15
+    limit: Optional[int] = 20
+
+@app.post("/available-trips")
+def available_trips(req: AvTripsReq):
+    try:
+        o_sid = resolve_stop_id(req.origin)
+        d_sid = resolve_stop_id(req.destination)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        trips = available_trips_between(
+            o_sid, d_sid, req.depart_at,
+            window_min=req.window_min or 15,
+            limit=req.limit or 20
+        )
+    except Exception as e:
+        # You’ll now see the real SQL/serialization error instead of a blank 500
+        raise HTTPException(status_code=500, detail=f"available_trips failed: {e}")
+
+    return {"trips": trips}
 
 # ---------- Helpers ----------
 def resolve_stop_id(p: Place) -> str:
