@@ -80,6 +80,7 @@ export default function PlanSummary({ plan }: { plan: Plan }) {
   const [avail, setAvail] = useState<AvTrip[] | null>(null);
   const [availErr, setAvailErr] = useState<string | null>(null);
   const queryDepartAt = plan.requested_depart_at || plan.depart_at;
+  
 
   useEffect(() => {
     let active = true;
@@ -144,44 +145,54 @@ export default function PlanSummary({ plan }: { plan: Plan }) {
   }, [plan]);
 
   // ---------------- Disruption alerts ----------------
-  const [alerts, setAlerts] = useState<Alert[] | null>(null);
-  const [alertsErr, setAlertsErr] = useState<string | null>(null);
+  // ---------------- Disruption alerts ----------------
+const [alerts, setAlerts] = useState<Alert[] | null>(null);
+const [alertsErr, setAlertsErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      setAlerts(null);
-      setAlertsErr(null);
-      if (!plan?.found) return;
+useEffect(() => {
+  let active = true;
+  (async () => {
+    setAlerts(null);
+    setAlertsErr(null);
+    if (!plan?.found) {
+      console.log("[disruptions] plan.found is false; skipping");
+      return;
+    }
 
-      const legs = plan.legs
-        .filter((l) => l.mode === "ride")
-        .map((l) => ({
-          route_id: l.route_id,
-          trip_id: l.trip_id,
-          from_stop: l.from_stop,
-          to_stop: l.to_stop,
-          depart_time: l.depart_time,
-          arrive_time: l.arrive_time,
-        }));
+    // ✅ Only require trip_id; do NOT filter by mode
+    const legs = (plan.legs || [])
+      .filter((l) => !!l.trip_id)
+      .map((l) => ({
+        route_id: l.route_id,
+        trip_id: l.trip_id,
+        from_stop: l.from_stop,
+        to_stop: l.to_stop,
+        depart_time: l.depart_time,
+        arrive_time: l.arrive_time,
+      }));
 
-      try {
-        const resp = await fetch("/api/disruptions/for-plan", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ legs }),
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        if (active) setAlerts(data.alerts || []);
-      } catch (e: any) {
-        if (active) setAlertsErr(e?.message || "Failed to load disruptions");
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [plan]);
+    console.log("[disruptions] sending legs ->", legs);
+
+    try {
+      const resp = await fetch("/api/disruptions/for-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ legs }),
+      });
+      const txt = await resp.text();
+      console.log("[disruptions] raw response ->", txt);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${txt}`);
+      const data = JSON.parse(txt);
+      if (active) setAlerts(Array.isArray(data.alerts) ? data.alerts : []);
+    } catch (e: any) {
+      if (active) setAlertsErr(e?.message || "Failed to load disruptions");
+    }
+  })();
+  return () => {
+    active = false;
+  };
+}, [plan]);
+
 
   const alertsByTrip = useMemo(() => {
     const map = new Map<string, Alert[]>();
@@ -292,32 +303,42 @@ export default function PlanSummary({ plan }: { plan: Plan }) {
         </div>
       </div>
 
-      {/* Service alerts */}
-      {alerts && alerts.length > 0 && (
-        <div className="glass rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xl md:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-amber-300 via-yellow-300 to-cyan-300">
-              Service alerts
-            </h3>
-            {alertsErr && <span className="badge badge-soft text-red-300">⚠️ {alertsErr}</span>}
-          </div>
-          <ul className="space-y-2">
-            {alerts
-              .slice()
-              .sort((a, b) => sevOrder[a.severity] - sevOrder[b.severity])
-              .map((a) => (
-                <li key={a.id} className="flex items-start gap-3">
-                  <span className="text-2xl">{sevIcon(a.severity)}</span>
-                  <div>
-                    <div className="font-semibold">{a.title}</div>
-                    {a.description && <div className="text-white/70">{a.description}</div>}
-                    {a.advice && <div className="text-white/60 text-sm mt-1">{a.advice}</div>}
-                  </div>
-                </li>
-              ))}
-          </ul>
-        </div>
-      )}
+     {/* Service alerts */}
+<div className="glass rounded-2xl p-5">
+  <div className="flex items-center justify-between mb-3">
+    <h3 className="text-xl md:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-amber-300 via-yellow-300 to-cyan-300">
+      Service alerts
+    </h3>
+    {alertsErr && <span className="badge badge-soft text-red-300">⚠️ {alertsErr}</span>}
+    {!alertsErr && alerts && (
+      <span className="badge badge-soft">Count: {alerts.length}</span>
+    )}
+    {!alerts && <span className="badge badge-soft">Loading…</span>}
+  </div>
+
+  {alerts && alerts.length === 0 && (
+    <div className="text-white/70">No disruptions for your current plan.</div>
+  )}
+
+  {alerts && alerts.length > 0 && (
+    <ul className="space-y-2">
+      {alerts
+        .slice()
+        .sort((a, b) => ({ major:0, minor:1, info:2 } as const)[a.severity] - ({ major:0, minor:1, info:2 } as const)[b.severity])
+        .map((a) => (
+          <li key={a.id} className="flex items-start gap-3">
+            <span className="text-2xl">{a.severity === "major" ? "🚨" : a.severity === "minor" ? "⚠️" : "ℹ️"}</span>
+            <div>
+              <div className="font-semibold">{a.title}</div>
+              {a.description && <div className="text-white/70">{a.description}</div>}
+              {a.advice && <div className="text-white/60 text-sm mt-1">{a.advice}</div>}
+            </div>
+          </li>
+        ))}
+    </ul>
+  )}
+</div>
+
 
       {/* Available buses */}
       <div className="glass rounded-2xl p-6">

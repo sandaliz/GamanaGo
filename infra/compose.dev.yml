@@ -74,6 +74,9 @@ services:
   disruption-manager:
     build: ../apps/agents/disruption-manager
     env_file: ../.env.example
+    environment:
+      DISRUPTION_GTFS_DIR: /data/gtfs_edit
+      AGGREGATOR_URL: http://data-aggregator:8001
     depends_on:
       redis:
         condition: service_started
@@ -83,6 +86,7 @@ services:
       - "8003:8003"
     volumes:
       - ../apps/agents/disruption-manager:/app
+      - ../apps/agents/data-aggregator/gtfs_edit:/data/gtfs_edit:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
     restart: unless-stopped
 

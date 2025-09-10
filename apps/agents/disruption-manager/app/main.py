@@ -1,83 +1,84 @@
 # from fastapi import FastAPI
-# app = FastAPI(title="disruption-manager")
+# from app.core.disruption import main_disruption_loop
+# import asyncio
+# import logging
+
+# app = FastAPI(title="Disruption Manager")
+# log = logging.getLogger(__name__)
 
 # @app.get("/health")
 # async def health():
-#     return {"status": "ok", "service": "disruption-manager"}
+#     return {"status": "ok"}
+
+# @app.on_event("startup")
+# async def startup_event():
+#     # create a background task from the coroutine
+#     asyncio.create_task(main_disruption_loop())
+
+# if __name__ == "__main__":
+#     import uvicorn
+#     # If Docker already runs uvicorn with reload, set reload=False here.
+#     uvicorn.run("app.main:app", host="0.0.0.0", port=8003, reload=True)
+
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Literal
-from app.core.disruption import calculate_delay_for_vehicle
-from app.clients.data_client import get_all_vehicle_positions
+from typing import List, Optional
+import asyncio
+import logging
 
-app = FastAPI(title="disruption-manager")
+from app.core.disruption import detect_alerts_for_legs
 
-class PlanLeg(BaseModel):
+app = FastAPI(title="Disruption Manager")
+log = logging.getLogger(__name__)
+
+# If you ever call directly from the web app (without the Next proxy), open CORS:
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # tighten in prod
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class LegIn(BaseModel):
     route_id: Optional[str] = None
     trip_id: Optional[str] = None
-    from_stop: str
-    to_stop: str
-    depart_time: str
-    arrive_time: str
+    from_stop: Optional[str] = None
+    to_stop: Optional[str] = None
+    depart_time: Optional[str] = None
+    arrive_time: Optional[str] = None
 
-class ForPlanReq(BaseModel):
-    legs: List[PlanLeg]
-
-class Alert(BaseModel):
-    id: str
-    scope: Literal["trip","route","network"]
-    severity: Literal["info","minor","major"]
-    title: str
-    description: Optional[str] = None
-    route_id: Optional[str] = None
-    trip_id: Optional[str] = None
-    advice: Optional[str] = None
+class ForPlanIn(BaseModel):
+    legs: List[LegIn]
 
 @app.get("/health")
-def health():
-    return {"status":"ok","service":"disruption-manager"}
+async def health():
+    return {"status": "ok"}
 
 @app.post("/disruptions/for-plan")
-def disruptions_for_plan(req: ForPlanReq):
-    vehicles = get_all_vehicle_positions()  # live/sim stream
-    by_trip = {v["trip_id"]: v for v in vehicles if v.get("trip_id")}
+async def disruptions_for_plan(body: ForPlanIn):
+    # compute alerts now
+    alerts = detect_alerts_for_legs([l.model_dump() for l in body.legs])
+    return {"alerts": alerts}
 
-    alerts: List[Alert] = []
-    seen = set()
+# ------------ Background loop -------------
+async def disruption_watchdog():
+    while True:
+        try:
+            log.info("Background: checking disruptions…")
+            # Place periodic tasks here (e.g., prewarm caches)
+            await asyncio.sleep(30)
+        except Exception:
+            log.exception("Loop crashed; retrying in 5s")
+            await asyncio.sleep(5)
 
-    for leg in req.legs:
-        if not leg.trip_id:
-            continue
-        v = by_trip.get(leg.trip_id)
-        if not v:
-            continue
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(disruption_watchdog())
 
-        delay_min = calculate_delay_for_vehicle(v)
-        if delay_min is None:
-            continue
-
-        # thresholds – tune as you like
-        if delay_min >= 15:
-            sev = "major"
-        elif delay_min >= 5:
-            sev = "minor"
-        else:
-            sev = "info"
-
-        # Avoid duplicates if multiple legs hit the same trip
-        key = (leg.trip_id, sev)
-        if key in seen:
-            continue
-        seen.add(key)
-
-        title = f"Delay on {leg.trip_id}: {delay_min:.0f} min"
-        alerts.append(Alert(
-            id=f"{leg.trip_id}:{sev}",
-            scope="trip",
-            severity=sev, title=title,
-            description=f"Vehicle is approximately {delay_min:.1f} minutes behind the schedule.",
-            route_id=leg.route_id, trip_id=leg.trip_id,
-            advice="Consider an earlier/later departure or alternate route."
-        ))
-
-    return {"alerts": [a.model_dump() for a in alerts]}
+if __name__ == "__main__":
+    import uvicorn
+    # If Docker runs uvicorn already (with --reload), disable reload here.
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8003, reload=True)
